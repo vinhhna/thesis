@@ -578,12 +578,6 @@ class LlamaDynamicvitFlashAttention2(LlamaFlashAttention2):
             attn_logits = torch.softmax(attn_logits, dim=-1)
         else:
             attn_logits = None
-        # TODO: These transpose are quite inefficient but Flash Attention requires the layout [batch_size, sequence_length, num_heads, head_dim]. We would need to refactor the KV cache
-        # to be able to avoid many of these transpose/reshape/view.
-        query_states = query_states.transpose(1, 2)
-        key_states = key_states.transpose(1, 2)
-        value_states = value_states.transpose(1, 2)
-
         dropout_rate = self.attention_dropout if self.training else 0.0
 
         # In PEFT, usually we cast the layer norms in float32 for training stability reasons
@@ -605,11 +599,38 @@ class LlamaDynamicvitFlashAttention2(LlamaFlashAttention2):
             query_states = query_states.to(target_dtype)
             key_states = key_states.to(target_dtype)
             value_states = value_states.to(target_dtype)
+
         if not output_attentions:
-            attn_weights = None    
-        attn_output = self._flash_attention_forward(
-            query_states, key_states, value_states, attention_mask, q_len, dropout=dropout_rate
-        )
+            attn_weights = None
+
+        use_flash_attention = "flash_attn_func" in globals()
+        if use_flash_attention:
+            # Flash Attention expects [batch, seq, heads, dim].
+            query_states = query_states.transpose(1, 2)
+            key_states = key_states.transpose(1, 2)
+            value_states = value_states.transpose(1, 2)
+            attn_output = self._flash_attention_forward(
+                query_states, key_states, value_states, attention_mask, q_len, dropout=dropout_rate
+            )
+        else:
+            # Fall back to the SDPA-style path when flash-attn is unavailable.
+            key_states = repeat_kv(key_states, self.num_key_value_groups)
+            value_states = repeat_kv(value_states, self.num_key_value_groups)
+
+            if attention_mask is not None and query_states.device.type == "cuda":
+                query_states = query_states.contiguous()
+                key_states = key_states.contiguous()
+                value_states = value_states.contiguous()
+
+            attn_output, _ = scaled_dot_product_attention(
+                query_states,
+                key_states,
+                value_states,
+                attn_mask=attention_mask,
+                dropout_p=dropout_rate,
+                is_causal=self.is_causal and attention_mask is None and q_len > 1,
+            )
+            attn_output = attn_output.transpose(1, 2).contiguous()
 
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size).contiguous()
         attn_output = self.o_proj(attn_output)
