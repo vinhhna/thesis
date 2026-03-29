@@ -1,0 +1,39 @@
+1. Basic info
+- Grounding models: LLaVA 1.5 (includes Vicuna 1.5 -> CLIP-L-336px)
+- Multimodal support: currently images only, if video needed -> switch to VideoLLaVA branch
+- Entry points:
+    + run_llava.py: one-shot command
+    + cli.py: terminal, interactive
+    + scripts/v1_5/eval: reproduce benchmark runs (all funnel into model_vqa_loader.py) 
+- Important snippets:
+    + token importance: score.py (line 17)
+    + sparsification: modelling_sparse_llama.py (line 223)
+    + recycling: modelling_sparse_llama.py (line 281), merge in utils.py (line 268)
+2. Dependency set-ups
+- Found files for dependency: pyproject.toml, install.sh, Windows.md
+- Using Python 3.11 instead of 3.13
+- 1-image test run requirements:
+    + model checkpoint:
+        . LLaVA v1.5 7B
+        . no meed for any other extra task models
+    + image path
+    + prompt / question
+    + run entry point
+    + whether the checkpoint is merged or LoRA
+    + memory problem
+- Retrying with WSL:
+    + successfully setting up WSL
+    + created Linux env
+    + installed dependencies
+    + could not install shards
+- Decision: move to Kaggle
+    + base model: liuhaotian/llava-v1.5-7b merged
+    + runtime mode: 4-bit
+- Kaggle setup plan:
+    + create Kaggle notebook
+    + clone the repo
+    + install dependencies
+    + validate environment
+    + use the chosen checkpoint
+    + run a 1-image smoke test
+    + results: smoke test successfully completed, model 13B works fine with about 6GB free

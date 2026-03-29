@@ -19,6 +19,9 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
     if device != "cuda":
         kwargs['device_map'] = {"": device}
 
+    if dynamic_sparse and (load_4bit or load_8bit):
+        raise ValueError("dynamic_sparse=True is not compatible with 4-bit or 8-bit quantized loading in this repo. Use full-precision weights for sparse-mode inference.")
+
     if load_8bit:
         kwargs['load_in_8bit'] = True
     elif load_4bit:
@@ -111,7 +114,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                         low_cpu_mem_usage=True,
                         **kwargs
                     )
-                    for i in range(32):
+                    for i in range(len(model.model.layers)):
                         flash_attn = LlamaDynamicvitFlashAttention2(config=model.config, layer_idx=i).half().to(device)
                         model.model.layers[i].add_module("flash_attn",flash_attn)
                         state_dict = model.model.layers[i].flash_attn.state_dict()
