@@ -37,5 +37,38 @@
     + validate environment
     + use the chosen checkpoint
     + run a 1-image smoke test
-    + results: smoke test successfully completed, model 13B works fine with about 6GB free
-
+    + results: smoke test successfully completed with the 7B model
+- Sparse mode test:
+    + 7B model works well, but there is only about 1,8 GB left
+    + use 7B for both sparse and non-sparse from now on
+    + there is no major quality collapse
+    + tradeoff: more prone to small detail differences, but still preserving core scene understanding
+- Code understanding:
+    + execution pipeline:
+        1. receive inputs: model path, image, query -> run_llava.py
+        2. infer model name -> mm_utils.py
+        3. load tokenizer, LM, vision tower, image processor
+        4. choose inference branch (sparse or no sparse)
+        5. if sparse -> replace attention module with sparse attention
+        6. add special tokens, resize token embeddings, load vision tower, ...
+        7. build text query string (insert image token marker)
+        8. select conversation template -> final prompt -> conversation.py
+        9. load image -> convert to tensors
+        10. tokenize text prompt -> replace placeholder
+        11. model.generate()
+        12. if image in prompt -> convert to embedding
+        13. project image embedding to LM hidden space
+        14. replace image embedding to placeholder
+        15. if sparse -> record metadata for sparse controls
+        16. if sparse -> send to sparse model wrapper
+        17. start autoregressive generation
+        18. initial pass -> LlamaDynamicvitModel
+        19. at ordinary decoder layers -> process tokens normally
+        20. at specific layers, compute attention-based importance scores
+        21. choose which visual tokens to keep
+        22. remove / merge less important visual tokens; preserve others
+        23. propagate the reduced token sequence
+        24. decode next steps, use cache for faster inference
+        25. compute logits, apply generation policy, append to sequence
+        26. decode until EOS / max length
+        27. decode final token ID to text, return model response
