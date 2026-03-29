@@ -21,6 +21,7 @@
     + run entry point
     + whether the checkpoint is merged or LoRA
     + memory problem
+    + task: using a sample image from the repo itself, ask a simple question and see if the answer is okay quantitatively or not
 - Retrying with WSL:
     + successfully setting up WSL
     + created Linux env
@@ -37,3 +38,4 @@
     + use the chosen checkpoint
     + run a 1-image smoke test
     + results: smoke test successfully completed, model 13B works fine with about 6GB free
+

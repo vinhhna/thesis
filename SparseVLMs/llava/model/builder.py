@@ -115,13 +115,32 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                         **kwargs
                     )
                     for i in range(len(model.model.layers)):
-                        flash_attn = LlamaDynamicvitFlashAttention2(config=model.config, layer_idx=i).half().to(device)
-                        model.model.layers[i].add_module("flash_attn",flash_attn)
-                        state_dict = model.model.layers[i].flash_attn.state_dict()
-                        for key in model.model.layers[i].self_attn.state_dict().keys():
-                            if key in state_dict.keys():
-                                state_dict[key] = model.model.layers[i].self_attn.state_dict()[key]
-                        model.model.layers[i].flash_attn.load_state_dict(state_dict)
+                        layer = model.model.layers[i]
+                        source_attn = layer.self_attn
+                        source_state_dict = {
+                            key: value.detach().cpu()
+                            for key, value in source_attn.state_dict().items()
+                        }
+
+                        # Build and initialize the sparse attention module on CPU first to avoid
+                        # holding both dense and sparse attention copies on GPU simultaneously.
+                        flash_attn = LlamaDynamicvitFlashAttention2(
+                            config=model.config,
+                            layer_idx=i,
+                        ).half()
+                        flash_state_dict = flash_attn.state_dict()
+                        for key in flash_state_dict.keys():
+                            if key in source_state_dict:
+                                flash_state_dict[key] = source_state_dict[key]
+                        flash_attn.load_state_dict(flash_state_dict)
+
+                        # Release the original attention module before moving the sparse one to GPU.
+                        layer.self_attn = None
+                        del source_attn
+                        del source_state_dict
+                        torch.cuda.empty_cache()
+
+                        layer.add_module("flash_attn", flash_attn.to(device))
                 else:
                     eval_logger.info("Start Normal Inference...")
                     model = LlavaLlamaForCausalLM.from_pretrained(
