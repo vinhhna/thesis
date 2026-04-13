@@ -12,8 +12,11 @@ from transformers.cache_utils import Cache, DynamicCache
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.modeling_outputs import CausalLMOutputWithPast, Seq2SeqLMOutput
 from transformers.utils import ExplicitEnum, ModelOutput, is_accelerate_available, logging
-from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
 from transformers.generation.beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer
+try:
+    from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
+except ModuleNotFoundError:
+    from transformers.generation.beam_search import DisjunctiveConstraint, PhrasalConstraint
 from transformers.generation.configuration_utils import GenerationConfig
 from transformers.generation.logits_process import (
     LogitsProcessorList,
