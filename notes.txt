@@ -72,3 +72,92 @@
         25. compute logits, apply generation policy, append to sequence
         26. decode until EOS / max length
         27. decode final token ID to text, return model response
+    + most important code files:
+        1. run_llava.py -> core inference path
+        2. builder.py -> core inference path
+        3. llava_arch.py -> multimodal input construction
+        4. sparse_llava_llama.py -> connect LLaVA with Llama backend
+        5. modelling_sparse_llama.py -> sparse implementation
+        6. score.py -> score visual tokens
+    + most important parameters:
+        1. model_path -> choose checkpoint to run
+        2. dynamic_sparse -> main mode switch
+        3. retained_tokens -> how many visual tokens survive pruning (192/128/64)
+        4. max_new_tokens -> caps output length
+        5. load_4bit / load_8bit -> memory saving load modes
+        6. pruning_loc -> which decoder layers perform pruning ([2,6,15])
+        7. conv_mode -> prompt formatting
+- Scoring / Ranking module:
+    + input:
+        1. self_attn_weights
+        2. v_token_start -> start of visual-token block
+        3. v_token_num -> number of visual tokens
+        4. text_token_start -> start of text-question block
+        5. t_token_idx -> indexes of tokens used for guiding scoring
+        6. layer_idx & retained_tokens -> control how agressive pruning is
+    + output:
+        1. mask -> 1 = keep, 0 = prune
+        2. s_flag
+        3. relation_vis_text -> relevance score before top-k thresholding
+    + how it works:
+        1. averages attention scores across heads
+        2. converts selected text indices into absolute sequence positions
+            2.1. before scoring, the model selects a subset of text tokens that seem most related to the image: calculate text tokens with relevance > mean relevance
+        3. extracts attention from those chosen text tokens, to the current visual-token region
+        4. averages over the selected text tokens -> one score per visual token
+        5. chooses per-layer retention budget
+        6. keeps top-k visual tokens by score
+
+- Identifying academic gap:
+    + ranking criteria:
+        1. picking important text tokens from the question / prompt: computes visual-text similarity, and keep text tokens whose score is above mean
+        2. score visual tokens by how much those selected text tokens attend to it -> averages self-attention weight from important question tokens to that visual token
+        3. rank by that score, and then keep top-k
+    + gaps following the ranking criteria:
+        1. sparsevlm is currently using attention weights and averaged relevance, which indicates how the token attends to other tokens. however, whether a token is central of attention or it is directly useful for the question is a different thing. for example, man walking dog -> man is central of attention, but the prompt may be asking about the dog
+        2. compositional or logical information: words such as "not", "left of", "behind", "except", "how many", ... controls how to understand the prompt, so the current criteria are missing out on these logical signals
+        3. dynamic relevance: at later layers, which token is important is different - at first we might need object cues, but later on we would need to have relation / counting / ... cues
+        4. diversity / coverage: missing out on redundancy, set-level diversity, multi-region coverage. it is because each visual token is independently evaluated, and top-k is selected based on their score, so many tokens would belong to the same highlighted region, lack of coverage for other regions, or many tokens have the same information
+        5. no weak and critical evidence
+    + importance of adding redundancy:
+        1. selection is independent across tokens
+        2. if many nearby patch all describe the object part, they can all score highly and crowd out other useful regions
+        3. visual tokens are naturally redundant, but the current scorer has no explicit coverage terms
+        4. at high compression (only retaining 64 tokens), wasting several tokens on near-duplicates is expensive
+        5. coverage is important rather than patches from the same salient object
+        6. lower compression -> less critical it becomes
+        7. therefore, redundancy is more important than small scoring refinements, albeit less fundamental than true causal usefulness or dynamic attention / importance, but it is strong and easier to justify
+        8. redundancy is strong but should not dominate relevance
+    + does redundancy happen in the code?
+        1. it doesn't mean the same token index is selected twice by top-k
+        2. it means multiple selected visual tokens contain nearly the same information
+        3. there are no steps in the code checking that
+- Recommended Intervention:
+    + add a redundancy-aware reranker after relevance scoring:
+        . keep the existing attention relevance score as the main score
+        . take a candidate pool larger than the final budget, for example 2*k or 3*k
+        . select final tokens with an MMR-style objective:
+final_score(token) = lambda * relevance(token) - (1 - lambda) * max_similarity(token, already_selected_tokens)
+    + suggested path:
+        1. add logging / metrics first to see if the original code really has the problem of having redundancy
+        2. implement MMR ranking as a new function - so I can run the original code for ablation
+        3. modify only the call site to pass visual hidden states, because the new function wants to calculate redundancy using cosine similarity, so it needs to know the embedding / current hidden states
+        4. compare top-k versus top-k + redundancy at retained_tokens = 192, 128, 64
+        5. focus the thesis claim on high compression (64)
+    + SparseVLM retention: 85 - 90%
+    + redundancy type: 
+        1. there are 3 types: feature similarity redundancy, attention-pattern redundancy, spatial redundancy
+        2. we are going to investigate feature similarity redundancy
+- Final intervention:
+    + two-stage MMR reranker
+    + input of the new scorer: take everything the old scorer takes, plus the current visual hidden states
+        . get visual_states from modelling_sparse_llama, then pass it into the new scorer
+    + original relevance score comes from the original SparseVLM relevance signal, we keep it as the base importance score
+    + calculate redundancy: use cosine similarity between visual-token hidden states
+    + final score: using MMR, recommendedly lambda = 0.8 or at least 0.75 - 0.9
+    + how to select the final top-k:
+        . keep SparseVLM existing budget logic
+        . use a candidate pool
+        . use MMR to select top k
+- First version:
+    + 

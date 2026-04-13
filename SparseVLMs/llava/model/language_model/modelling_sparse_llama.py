@@ -263,8 +263,9 @@ class LlamaDynamicvitModel(LlamaModel):
                     )
 
                     attn_logits = layer_outputs[2]
+                    visual_states = layer_outputs[0][:, v_token_start:text_token_start, :]
                     
-                    pred_score_vis, s_flag, relation_vis_text = attn_postprocess_topk(attn_logits, v_token_start, v_token_num, text_token_start, t_token_idx, layer_idx,retained_tokens) # B, L_v
+                    pred_score_vis, s_flag, relation_vis_text = attn_postprocess_mmr(attn_logits, visual_states, v_token_start, v_token_num, text_token_start, t_token_idx, layer_idx,retained_tokens) # B, L_v
                     policy = torch.ones(B, hidden_states.shape[1], dtype=hidden_states.dtype, device=hidden_states.device)
                     policy[:, v_token_start:text_token_start] = pred_score_vis.type(dtype = hidden_states.dtype)
 
