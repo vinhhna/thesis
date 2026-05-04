@@ -159,5 +159,22 @@ final_score(token) = lambda * relevance(token) - (1 - lambda) * max_similarity(t
         . keep SparseVLM existing budget logic
         . use a candidate pool
         . use MMR to select top k
-- First version:
-    + 
+- Next step: collect image samples to find out the failing cases of SparseVLM
+    + created a failure_mining_set.csv file for mining failures
+    + gathered 70 (GQA) + 20 (VQAv2) + 10 (TextVQA) questions for testing
+    + dominated it with GQA because:
+        . GQA questions often require object relations, spatial reasoning, attributes, counting, compositional logic, negation. 
+        . these are exactly the cases where pruning may cause failure.
+        . VQA -> general sanity check
+        . TextVQA -> less central to the problem
+    + GQA is not final benchmark - it is to mine failures
+    + each cases include: image, question, ground truth, question type
+    + question types:
+        . "rel": relationship / spatial reasoning questions: left/right/in front/top/...
+        . "attr": attribute: color/size/side/state/comparison
+        . "obj": object existence: check whether an object/2 objects are present
+        . "cat": category / object classification: "what kind of... is here"
+        . "global": global scene understanding questions
+        . "ocr": text questions
+        . else: general questions: yes/no, open-ended
+    + ranking difficulty: rel -> obj -> attr -> ocr -> cat -> else -> global
