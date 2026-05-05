@@ -178,3 +178,8 @@ final_score(token) = lambda * relevance(token) - (1 - lambda) * max_similarity(t
         . "ocr": text questions
         . else: general questions: yes/no, open-ended
     + ranking difficulty: rel -> obj -> attr -> ocr -> cat -> else -> global
+- Sample inference:
+    + model gives an arbitrary length answer - it can be short or long, but mostly the answer is long
+    + the output is in natural language and does not need to be standardized
+    + 100% cases ran successfully
+    + the predictions are enough to do qualitative checks
