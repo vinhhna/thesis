@@ -11,7 +11,6 @@ Cell 1:
 %cd /kaggle/working/thesis/SparseVLMs
 !git rev-parse --short HEAD
 
-from collections import Counter
 from pathlib import Path
 import csv
 
@@ -22,12 +21,9 @@ rows = list(csv.DictReader(csv_path.open("r", encoding="utf-8")))
 missing = [row["image_path"] for row in rows if not (repo_root / row["image_path"]).exists()]
 
 print("Samples:", len(rows))
-print("Datasets:", dict(Counter(row["dataset"] for row in rows)))
-print("Question types:", dict(Counter(row["question_type"] for row in rows)))
 print("Missing images:", len(missing))
 if missing:
     print("First missing image paths:", missing[:10])
-    raise RuntimeError("Some image paths from failure_mining_set.csv are missing.")
 ```
 
 Cell 2:
@@ -49,12 +45,11 @@ Cell 3:
 import os
 import sys
 import torch
-from pathlib import Path
 
 REPO_ROOT = "/kaggle/working/thesis"
 SPARSEVLM_ROOT = "/kaggle/working/thesis/SparseVLMs"
 CSV_PATH = f"{REPO_ROOT}/failure_mining_set.csv"
-OUTPUT_JSONL = "/kaggle/working/failure_mining_budget_sweep_outputs.jsonl"
+OUTPUT_JSONL = "/kaggle/working/failure_mining_sparse_pruned_outputs.jsonl"
 
 os.environ["USE_FLAX"] = "NO"
 os.environ["USE_JAX"] = "NO"
@@ -84,31 +79,11 @@ if gpu_capability[0] == 6 and "sm_60" not in torch_arches:
         "Run Cell 2 from a fresh kernel so it installs the P100-compatible PyTorch build, "
         "then continue from Cell 3."
     )
-
-# SparseVLM's score.py supports 192/128/64 by default. Add an interpolated
-# 96-token budget for the sweep without requiring a repo commit.
-score_path = Path(SPARSEVLM_ROOT) / "llava" / "model" / "language_model" / "score.py"
-score_text = score_path.read_text(encoding="utf-8")
-if "sparse_token_list_96" not in score_text:
-    score_text = score_text.replace(
-        "sparse_token_list_64 = [66,30,17]          \n",
-        "sparse_token_list_64 = [66,30,17]          \n"
-        "sparse_token_list_96 = [184,70,26]         # midpoint between 128 and 64 budgets\n",
-    )
-    score_text = score_text.replace(
-        "    128: sparse_token_list_128,\n    64 : sparse_token_list_64\n}",
-        "    128: sparse_token_list_128,\n    96 : sparse_token_list_96,\n    64 : sparse_token_list_64\n}",
-    )
-    score_path.write_text(score_text, encoding="utf-8")
-    print("Patched score.py to support retained_tokens=96.")
-else:
-    print("score.py already supports retained_tokens=96.")
 ```
 
 Cell 4:
 ```python
 import csv
-import gc
 import json
 import os
 import sys
@@ -133,7 +108,7 @@ for module_name in list(sys.modules):
 import torch
 from PIL import Image as PILImage
 from IPython.display import Image as DisplayImage
-from IPython.display import FileLink, Markdown, display
+from IPython.display import Markdown, display
 
 from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
 from llava.conversation import conv_templates
@@ -144,14 +119,8 @@ from llava.utils import disable_torch_init
 
 MODEL_PATH = "liuhaotian/llava-v1.5-7b"
 CONV_MODE = "llava_v1"
+RETAINED_TOKENS = 64
 MAX_NEW_TOKENS = 64
-SWEEP_MODES = [
-    {"mode": "dense", "retained_tokens": None, "dynamic_sparse": False},
-    {"mode": "sparse_192", "retained_tokens": 192, "dynamic_sparse": True},
-    {"mode": "sparse_128", "retained_tokens": 128, "dynamic_sparse": True},
-    {"mode": "sparse_96", "retained_tokens": 96, "dynamic_sparse": True},
-    {"mode": "sparse_64", "retained_tokens": 64, "dynamic_sparse": True},
-]
 
 
 def build_prompt(question):
@@ -161,44 +130,7 @@ def build_prompt(question):
     return conv.get_prompt()
 
 
-def load_model_bundle(dynamic_sparse):
-    disable_torch_init()
-    torch.backends.cuda.matmul.allow_tf32 = True
-    model_name = get_model_name_from_path(MODEL_PATH)
-
-    load_start = time.time()
-    tokenizer, model, image_processor, context_len = load_pretrained_model(
-        MODEL_PATH,
-        model_base=None,
-        model_name=model_name,
-        load_4bit=False,
-        load_8bit=False,
-        device="cuda",
-        dynamic_sparse=dynamic_sparse,
-    )
-    model.eval()
-    print(
-        "Loaded:",
-        MODEL_PATH,
-        "| dynamic_sparse:",
-        dynamic_sparse,
-        "| context length:",
-        context_len,
-        "| seconds:",
-        round(time.time() - load_start, 2),
-    )
-    return tokenizer, model, image_processor
-
-
-def unload_model_bundle(tokenizer=None, model=None, image_processor=None):
-    del tokenizer, model, image_processor
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.ipc_collect()
-
-
-def generate_answer(tokenizer, model, image_processor, image_path, question, retained_tokens=None):
+def sparse_pruned_answer(image_path, question):
     prompt = build_prompt(question)
     image = PILImage.open(image_path).convert("RGB")
     image_sizes = [image.size]
@@ -219,164 +151,102 @@ def generate_answer(tokenizer, model, image_processor, image_path, question, ret
         return_tensors="pt",
     ).unsqueeze(0).to(model.device)
 
-    generate_kwargs = {
-        "inputs": input_ids,
-        "images": images_tensor,
-        "image_sizes": image_sizes,
-        "do_sample": False,
-        "num_beams": 1,
-        "max_new_tokens": MAX_NEW_TOKENS,
-        "use_cache": True,
-    }
-    if retained_tokens is not None:
-        generate_kwargs["retained_tokens"] = retained_tokens
-
     with torch.inference_mode():
-        output_ids = model.generate(**generate_kwargs)
+        output_ids = model.generate(
+            inputs=input_ids,
+            images=images_tensor,
+            image_sizes=image_sizes,
+            do_sample=False,
+            num_beams=1,
+            max_new_tokens=MAX_NEW_TOKENS,
+            use_cache=True,
+            retained_tokens=RETAINED_TOKENS,
+        )
 
     return tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
 
-def load_rows(start=0, limit=None):
+def run_failure_mining_inference(start=0, limit=None, image_width=420, output_jsonl=OUTPUT_JSONL):
     with open(CSV_PATH, "r", encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
+
+    total = len(rows)
     selected = rows[start:] if limit is None else rows[start:start + limit]
-    return rows, selected
 
-
-def load_completed_keys(output_jsonl):
     output_path = Path(output_jsonl)
-    completed = set()
-    if not output_path.exists():
-        return completed
-    for line in output_path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        completed.add((record.get("case_id"), record.get("mode")))
-    return completed
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    print(f"Running SparseVLM pruned inference on {len(selected)} samples.")
+    print(f"Retained visual tokens: {RETAINED_TOKENS}")
+    print(f"Writing outputs to: {output_path}")
+    print()
 
-def run_mode(mode_cfg, selected, total, start_offset, output_jsonl, image_width=420, resume=True):
-    mode = mode_cfg["mode"]
-    retained_tokens = mode_cfg["retained_tokens"]
-    dynamic_sparse = mode_cfg["dynamic_sparse"]
-    completed = load_completed_keys(output_jsonl) if resume else set()
-    tokenizer, model, image_processor = load_model_bundle(dynamic_sparse=dynamic_sparse)
+    with output_path.open("w", encoding="utf-8") as f:
+        for offset, row in enumerate(selected, start=start + 1):
+            image_path = Path(REPO_ROOT) / row["image_path"]
+            case_id = row["case_id"]
+            dataset = row["dataset"]
+            question_type = row.get("question_type", "")
+            question = row["question"]
+            ground_truth = row.get("ground_truth", "")
 
-    try:
-        output_path = Path(output_jsonl)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("a" if resume else "w", encoding="utf-8") as f:
-            for local_idx, row in enumerate(selected, start=1):
-                offset = start_offset + local_idx - 1
-                case_id = row["case_id"]
-                if (case_id, mode) in completed:
-                    print(f"[skip] {mode} {case_id}")
-                    continue
+            display(Markdown(f"### {offset}/{total} `{case_id}` | `{dataset}` | `{question_type}`"))
+            display(DisplayImage(filename=str(image_path), width=image_width))
+            print("Question:", question)
+            print("Ground truth:", ground_truth)
 
-                image_path = Path(REPO_ROOT) / row["image_path"]
-                dataset = row["dataset"]
-                question_type = row.get("question_type", "")
-                question = row["question"]
+            sample_start = time.time()
+            answer = sparse_pruned_answer(image_path, question)
+            elapsed = time.time() - sample_start
 
-                display(Markdown(f"### {mode} | {offset}/{total} `{case_id}` | `{dataset}` | `{question_type}`"))
-                display(DisplayImage(filename=str(image_path), width=image_width))
-                print("Question:", question)
+            print("SparseVLM pruned answer:", answer)
+            print("Inference seconds:", round(elapsed, 2))
+            print("-" * 100, flush=True)
 
-                sample_start = time.time()
-                answer = generate_answer(
-                    tokenizer,
-                    model,
-                    image_processor,
-                    image_path,
-                    question,
-                    retained_tokens=retained_tokens,
-                )
-                elapsed = time.time() - sample_start
+            f.write(json.dumps({
+                "case_id": case_id,
+                "dataset": dataset,
+                "image_path": row["image_path"],
+                "question": question,
+                "ground_truth": ground_truth,
+                "question_type": question_type,
+                "retained_tokens": RETAINED_TOKENS,
+                "sparse_pruned_answer": answer,
+                "inference_seconds": elapsed,
+            }, ensure_ascii=False) + "\n")
+            f.flush()
 
-                ground_truth = row.get("ground_truth", "")
-                print("Answer:", answer)
-                print("Ground truth:", ground_truth)
-                print("Inference seconds:", round(elapsed, 2))
-                print("-" * 100, flush=True)
-
-                f.write(json.dumps({
-                    "case_id": case_id,
-                    "dataset": dataset,
-                    "image_path": row["image_path"],
-                    "question": question,
-                    "ground_truth": ground_truth,
-                    "question_type": question_type,
-                    "mode": mode,
-                    "retained_tokens": retained_tokens,
-                    "answer": answer,
-                    "inference_seconds": elapsed,
-                }, ensure_ascii=False) + "\n")
-                f.flush()
-
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-    finally:
-        unload_model_bundle(tokenizer, model, image_processor)
-
-
-def run_budget_sweep(modes=SWEEP_MODES, start=0, limit=None, image_width=420, output_jsonl=OUTPUT_JSONL, resume=True):
-    all_rows, selected = load_rows(start=start, limit=limit)
-    total = len(all_rows)
-    print(f"Running budget sweep on {len(selected)} selected samples from {total} total samples.")
-    print("Output:", output_jsonl)
-    print("Modes:", [(m["mode"], m["retained_tokens"]) for m in modes])
-    print("Resume:", resume)
-
-    for mode_cfg in modes:
-        print("=" * 100)
-        print("Starting mode:", mode_cfg)
-        run_mode(
-            mode_cfg,
-            selected,
-            total=total,
-            start_offset=start + 1,
-            output_jsonl=output_jsonl,
-            image_width=image_width,
-            resume=resume,
-        )
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     print("Done.")
-    print("Saved:", output_jsonl)
-    display(FileLink(output_jsonl))
+    print("Saved:", output_path)
+
+
+disable_torch_init()
+torch.backends.cuda.matmul.allow_tf32 = True
+
+model_name = get_model_name_from_path(MODEL_PATH)
+
+load_start = time.time()
+tokenizer, model, image_processor, context_len = load_pretrained_model(
+    MODEL_PATH,
+    model_base=None,
+    model_name=model_name,
+    load_4bit=False,
+    load_8bit=False,
+    device="cuda",
+    dynamic_sparse=True,
+)
+model.eval()
+
+print("Loaded:", MODEL_PATH)
+print("Conversation mode:", CONV_MODE)
+print("Context length:", context_len)
+print("Load seconds:", round(time.time() - load_start, 2))
 ```
 
 Cell 5:
 ```python
-# Optional runtime check. Keep this False for the final full run.
-RUN_MINI_SWEEP = False
-if RUN_MINI_SWEEP:
-    run_budget_sweep(
-        start=0,
-        limit=2,
-        output_jsonl="/kaggle/working/failure_mining_budget_sweep_mini.jsonl",
-        resume=False,
-    )
-
-# Full run over all 100 cases and all modes.
-RUN_FULL_SWEEP = True
-if RUN_FULL_SWEEP:
-    run_budget_sweep()
-```
-
-Cell 6:
-```python
-from pathlib import Path
-from IPython.display import FileLink, display
-
-output_path = Path("/kaggle/working/failure_mining_budget_sweep_outputs.jsonl")
-print("Exists:", output_path.exists())
-if output_path.exists():
-    print("Size bytes:", output_path.stat().st_size)
-    print("Line count:", sum(1 for _ in output_path.open("r", encoding="utf-8")))
-    display(FileLink(str(output_path)))
+run_failure_mining_inference()
 ```
