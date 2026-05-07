@@ -10,20 +10,6 @@ Cell 1:
 
 %cd /kaggle/working/thesis/SparseVLMs
 !git rev-parse --short HEAD
-
-from pathlib import Path
-import csv
-
-repo_root = Path("/kaggle/working/thesis")
-csv_path = repo_root / "failure_mining_set.csv"
-
-rows = list(csv.DictReader(csv_path.open("r", encoding="utf-8")))
-missing = [row["image_path"] for row in rows if not (repo_root / row["image_path"]).exists()]
-
-print("Samples:", len(rows))
-print("Missing images:", len(missing))
-if missing:
-    print("First missing image paths:", missing[:10])
 ```
 
 Cell 2:
@@ -34,8 +20,8 @@ Cell 2:
 
 !python -m pip install "numpy<2" protobuf sentencepiece shortuuid
 !python -m pip install transformers==4.37.2 tokenizers==0.15.1 accelerate==0.21.0 peft==0.7.1
-!python -m pip install bitsandbytes==0.45.5 einops==0.6.1 einops-exts==0.0.4 timm==0.6.13 "markdown2[all]"
-!python -m pip uninstall -y jax jaxlib flax optax chex orbax-checkpoint
+!python -m pip install einops==0.6.1 einops-exts==0.0.4 timm==0.6.13 "markdown2[all]"
+!python -m pip uninstall -y bitsandbytes jax jaxlib flax optax chex orbax-checkpoint
 
 print("Restart the Kaggle kernel after this cell finishes, then continue from Cell 3.")
 ```
@@ -47,38 +33,19 @@ import sys
 import torch
 
 REPO_ROOT = "/kaggle/working/thesis"
-SPARSEVLM_ROOT = "/kaggle/working/thesis/SparseVLMs"
+LLAVA_ROOT = "/kaggle/working/thesis/SparseVLMs"
 CSV_PATH = f"{REPO_ROOT}/failure_mining_set.csv"
-OUTPUT_JSONL = "/kaggle/working/failure_mining_sparse_pruned_outputs.jsonl"
+OUTPUT_JSONL = "/kaggle/working/failure_mining_dense_outputs.jsonl"
 
 os.environ["USE_FLAX"] = "NO"
 os.environ["USE_JAX"] = "NO"
 os.environ["USE_TF"] = "NO"
-os.environ["PYTHONPATH"] = SPARSEVLM_ROOT
-if SPARSEVLM_ROOT not in sys.path:
-    sys.path.insert(0, SPARSEVLM_ROOT)
+os.environ["PYTHONPATH"] = LLAVA_ROOT
+if LLAVA_ROOT not in sys.path:
+    sys.path.insert(0, LLAVA_ROOT)
 
 print("Torch:", torch.__version__)
 print("Torch CUDA build:", torch.version.cuda)
-print("CUDA available:", torch.cuda.is_available())
-
-if not torch.cuda.is_available():
-    raise RuntimeError("Enable a GPU accelerator in Kaggle before running SparseVLM inference.")
-
-gpu_name = torch.cuda.get_device_name(0)
-gpu_capability = torch.cuda.get_device_capability(0)
-torch_arches = torch.cuda.get_arch_list()
-
-print("GPU:", gpu_name)
-print("GPU capability:", gpu_capability)
-print("Torch CUDA architectures:", torch_arches)
-
-if gpu_capability[0] == 6 and "sm_60" not in torch_arches:
-    raise RuntimeError(
-        "Kaggle assigned a Tesla P100 GPU, but the current PyTorch build does not support sm_60. "
-        "Run Cell 2 from a fresh kernel so it installs the P100-compatible PyTorch build, "
-        "then continue from Cell 3."
-    )
 ```
 
 Cell 4:
@@ -86,24 +53,12 @@ Cell 4:
 import csv
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
 os.environ["USE_FLAX"] = "NO"
 os.environ["USE_JAX"] = "NO"
 os.environ["USE_TF"] = "NO"
-
-for module_name in list(sys.modules):
-    if (
-        module_name == "transformers"
-        or module_name.startswith("transformers.")
-        or module_name == "jax"
-        or module_name.startswith("jax.")
-        or module_name == "flax"
-        or module_name.startswith("flax.")
-    ):
-        del sys.modules[module_name]
 
 import torch
 from PIL import Image as PILImage
@@ -119,7 +74,6 @@ from llava.utils import disable_torch_init
 
 MODEL_PATH = "liuhaotian/llava-v1.5-7b"
 CONV_MODE = "llava_v1"
-RETAINED_TOKENS = 64
 MAX_NEW_TOKENS = 64
 
 
@@ -130,7 +84,7 @@ def build_prompt(question):
     return conv.get_prompt()
 
 
-def sparse_pruned_answer(image_path, question):
+def dense_answer(image_path, question):
     prompt = build_prompt(question)
     image = PILImage.open(image_path).convert("RGB")
     image_sizes = [image.size]
@@ -160,7 +114,6 @@ def sparse_pruned_answer(image_path, question):
             num_beams=1,
             max_new_tokens=MAX_NEW_TOKENS,
             use_cache=True,
-            retained_tokens=RETAINED_TOKENS,
         )
 
     return tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
@@ -176,8 +129,7 @@ def run_failure_mining_inference(start=0, limit=None, image_width=420, output_js
     output_path = Path(output_jsonl)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Running SparseVLM pruned inference on {len(selected)} samples.")
-    print(f"Retained visual tokens: {RETAINED_TOKENS}")
+    print(f"Running dense LLaVA inference on {len(selected)} samples.")
     print(f"Writing outputs to: {output_path}")
     print()
 
@@ -196,10 +148,10 @@ def run_failure_mining_inference(start=0, limit=None, image_width=420, output_js
             print("Ground truth:", ground_truth)
 
             sample_start = time.time()
-            answer = sparse_pruned_answer(image_path, question)
+            answer = dense_answer(image_path, question)
             elapsed = time.time() - sample_start
 
-            print("SparseVLM pruned answer:", answer)
+            print("Dense answer:", answer)
             print("Inference seconds:", round(elapsed, 2))
             print("-" * 100, flush=True)
 
@@ -210,14 +162,11 @@ def run_failure_mining_inference(start=0, limit=None, image_width=420, output_js
                 "question": question,
                 "ground_truth": ground_truth,
                 "question_type": question_type,
-                "retained_tokens": RETAINED_TOKENS,
-                "sparse_pruned_answer": answer,
+                "dense_answer": answer,
                 "inference_seconds": elapsed,
             }, ensure_ascii=False) + "\n")
             f.flush()
-
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
     print("Done.")
     print("Saved:", output_path)
@@ -236,7 +185,7 @@ tokenizer, model, image_processor, context_len = load_pretrained_model(
     load_4bit=False,
     load_8bit=False,
     device="cuda",
-    dynamic_sparse=True,
+    dynamic_sparse=False,
 )
 model.eval()
 

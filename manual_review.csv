@@ -1,0 +1,101 @@
+number,id,question,ground_truth,answer,dense_answer,sparse_dense_different,judgment,selected_for_inspection
+1,GQA_VAL_001,Is the white toilet paper to the left or to the right of the toilet?,left,The white toilet paper is to the right of the toilet.,The white toilet paper is to the left of the toilet.,yes,wrong,yes
+2,GQA_VAL_002,What is the vehicle that is in front of the lush trees?,train,A train is in front of the lush trees.,A train is in front of the lush trees.,no,correct,no
+3,GQA_VAL_003,Is the gold dog to the right of a tent?,yes,"Yes, the gold dog is to the right of a tent.","Yes, the gold dog is to the right of a tent.",no,correct,no
+4,GQA_VAL_004,What's the sticker on?,surfboard,Surfboard,Surfboard,no,correct,no
+5,GQA_VAL_005,Do you see any cars to the right of the fire hydrant?,no,"Yes, there are cars driving down the street to the right of the fire hydrant.","Yes, there are cars to the right of the fire hydrant.",no,wrong,yes
+6,GQA_VAL_006,What animal is in front of the mountains that are not short?,cows,Cows are in front of the mountains that are not short.,Cows are in front of the mountains that are not short.,no,correct,no
+7,GQA_VAL_007,Are there any cakes in the tray in the bottom of the picture?,no,"No, there are no cakes in the tray in the bottom of the picture. The tray contains a book and a remote control.","No, there are no cakes in the tray in the bottom of the picture. The tray contains books and a magazine.",no,correct,no
+8,GQA_VAL_008,Who is wearing the shirt?,man,A man is wearing the shirt.,A man is wearing the shirt.,no,correct,no
+9,GQA_VAL_009,What is the toy that is sitting wearing?,scarf,The toy that is sitting is wearing a scarf.,The toy sitting on the bed is wearing a scarf.,no,correct,no
+10,GQA_VAL_010,What is the device that is to the right of the bag?,keyboard,Laptop,Laptop,no,acceptable,no
+11,GQA_VAL_011,What is this woman holding?,racket,The woman is holding a tennis racket.,The woman is holding a tennis racket.,no,correct,no
+12,GQA_VAL_012,What is the painting that is to the left of the clock hanging on?,wall,The painting that is to the left of the clock is hanging on the wall.,The painting that is to the left of the clock is hanging on the wall.,no,correct,no
+13,GQA_VAL_013,Who is wearing the cap?,man,The man is wearing the cap.,The man is wearing the cap.,no,correct,no
+14,GQA_VAL_014,What is the appliance on top of the counter?,toaster,There is a refrigerator on top of the counter.,There is a microwave on top of the counter.,yes,wrong,yes
+15,GQA_VAL_015,"On which side of the photo are the wood cabinets, the left or the right?",right,Left,The wood cabinets are on the right side of the photo.,yes,wrong,yes
+16,GQA_VAL_016,Does the vehicle in front of the trees have small size and red color?,no,"No, the vehicle in front of the trees is not small in size and does not have a red color. It is a large yellow bus.","No, the vehicle in front of the trees is not small in size and does not have a red color. It is a large train or a trolley car.",yes,acceptable,no
+17,GQA_VAL_017,Which side is the fence on?,right,The fence is on the left side of the image.,The fence is on the left side of the image.,no,ambiguous,yes
+18,GQA_VAL_018,Is the blanket to the right of the cow blue or pink?,pink,The blanket on the cow is pink.,The blanket on the cow is pink.,no,correct,no
+19,GQA_VAL_019,"On which side is the happy person, the left or the right?",left,The happy person is on the right side of the image.,The happy person is on the left side of the image.,yes,wrong,yes
+20,GQA_VAL_020,Is the red fruit in the bottom?,no,"No, the red fruit is not in the bottom. It is in the top left corner of the image.","No, the red fruit is in the top left corner of the image.",no,correct,no
+21,GQA_VAL_021,The helmet in the top is what color?,blue,The helmet in the top is blue.,The helmet in the top is blue.,no,correct,no
+22,GQA_VAL_022,Does the blue vehicle seem to be running?,yes,"Yes, the blue vehicle appears to be running, as it is described as a ""bus running down the street.""","Yes, the blue vehicle appears to be running, as it is described as a ""bus running down the street.""",no,correct,no
+23,GQA_VAL_023,Is the plate on the left side?,yes,"Yes, the plate is on the left side of the image.","Yes, the plate is on the left side of the image.",no,correct,no
+24,GQA_VAL_024,Which side of the image is the pot on?,right,The pot is on the left side of the image.,The pot is on the right side of the image.,yes,wrong,yes
+25,GQA_VAL_025,On which side is the cabbage?,left,The cabbage is on the left side of the image.,The cabbage is on the left side of the image.,no,correct,no
+26,GQA_VAL_026,Are the helmet and the tee shirt the same color?,yes,"Yes, the helmet and the tee shirt are the same color.","Yes, the helmet and the tee shirt are the same color.",no,correct,no
+27,GQA_VAL_027,Is the field snowy or grassy?,snowy,The field is snowy.,"The field is snowy, with a layer of snow covering the ground.",no,correct,no
+28,GQA_VAL_028,Is the tie black or blue?,black,The tie is black.,The tie is black.,no,correct,no
+29,GQA_VAL_029,Are there any chairs?,yes,"Yes, there is a chair in the image.","Yes, there is a chair in the image.",no,correct,no
+30,GQA_VAL_030,Are there any umbrellas or bags?,yes,"Yes, there are umbrellas and bags in the image.","Yes, there are umbrellas and bags in the image.",no,acceptable,no
+31,GQA_VAL_031,Are there couches or lobsters in this picture?,no,"No, there are no couches or lobsters in this picture. The image features two cats sitting on a wooden shelf or a ledge, looking at each other.","No, there are no couches or lobsters in this picture. The image features two cats sitting on a wooden shelf or a wooden bench, looking at each other.",no,correct,no
+32,GQA_VAL_032,Are there fences or fire hydrants?,no,"No, there are no fences or fire hydrants in the image. The image features a giraffe standing in a grassy field.","No, there are no fences or fire hydrants in the image. The scene features a giraffe standing in a field of tall grass.",no,correct,no
+33,GQA_VAL_033,Is there any white chair or keyboard in this picture?,yes,"Yes, there is a white chair and a white keyboard in the image.","Yes, there is a white chair and a white keyboard in the picture.",no,acceptable,no
+34,GQA_VAL_034,Are there green fences or fire hydrants?,yes,"Yes, there is a green fence and a fire hydrant in the image.","Yes, there are green fences and fire hydrants in the image.",no,acceptable,no
+35,GQA_VAL_035,Do you see kites or pictures in the image?,no,"No, there are no kites or pictures in the image. The image features a row of baseball bats leaning against a fence.","No, there are no kites or pictures in the image. The image features a baseball field with baseball gloves and hats lined up on a wall.",yes,correct,no
+36,GQA_VAL_036,Are there both a bottle and a pot in the photo?,yes,"Yes, there is a bottle and a pot in the photo, both placed on the kitchen counter.","Yes, there is a bottle and a pot in the photo, both placed on the kitchen counter.",no,correct,no
+37,GQA_VAL_037,Are there both a table and a bottle in this photograph?,no,"Yes, there is a table and a bottle in the photograph. The table is holding a pizza, and there is a bottle on the table as well.","Yes, there is a table and a bottle in the photograph. The table is holding a pizza, and the bottle is located near the pizza.",no,wrong,yes
+38,GQA_VAL_038,Are there any chairs or umbrellas in the image?,no,"No, there are no chairs or umbrellas in the image. The image features a woman with curly hair and glasses, who is holding a cell phone.","No, there are no chairs or umbrellas in the image. The image features a woman taking a selfie in a bathroom.",no,correct,no
+39,GQA_VAL_039,Are there chimneys or skateboards?,no,"No, there are no chimneys or skateboards in the image. The image features a herd of elephants, including a baby elephant, walking across a river.","No, there are no chimneys or skateboards in the image. The image features a herd of elephants walking across a river.",no,correct,no
+40,GQA_VAL_040,Are there either gifts or kites in the image?,no,"No, there are no gifts or kites in the image. The image features an elephant eating from a tree, standing next to a tree trunk.","No, there are no gifts or kites in the image. The image features an elephant standing next to a tree and a rock.",no,correct,no
+41,GQA_VAL_041,Is there a kite or a flag in this photo?,yes,"Yes, there is a kite in the photo, and it is being flown by a person.","Yes, there is a kite in the photo, and it is being flown by one of the people on the frozen lake.",no,correct,no
+42,GQA_VAL_042,Do you see a bench or a clock in the picture?,no,"Yes, there is a bench in the picture, and a woman is sitting on it.","Yes, there is a bench in the picture, and the woman is standing next to it.",no,wrong,yes
+43,GQA_VAL_043,What food item isn't large?,carrot,The carrots are not large.,The carrots are not large in size.,no,correct,no
+44,GQA_VAL_044,Which kind of food is fried?,egg,The food that is fried is rice.,The egg is fried.,yes,wrong,yes
+45,GQA_VAL_045,How is the black item of clothing called?,suit,The black item of clothing is a shirt.,The black item of clothing is a suit.,yes,wrong,yes
+46,GQA_VAL_046,What piece of furniture is it?,desk,It is a desk.,It is a desk.,no,correct,no
+47,GQA_VAL_047,Which kind is this vehicle?,carriage,This vehicle is a motorcycle.,This is a bicycle.,yes,wrong,yes
+48,GQA_VAL_048,Who is waiting?,passengers,A train is waiting on the tracks.,A train is waiting on the tracks.,no,wrong,yes
+49,GQA_VAL_049,What is the name of the clothing item that is heavy?,jacket,The clothing item that is heavy is a jacket.,The clothing item that is heavy is a jacket.,no,correct,no
+50,GQA_VAL_050,What kind of clothing is not white?,suit,The mask is not white.,The man is wearing a white shirt and a black suit.,yes,wrong,yes
+51,GQA_VAL_051,Is this a cabinet or a lamp?,lamp,"This is a lamp, not a cabinet.","This is a lamp, not a cabinet.",no,correct,no
+52,GQA_VAL_052,How is the blue clothing item called?,shirt,The blue clothing item is a shirt.,The blue clothing item is a shirt.,no,correct,no
+53,GQA_VAL_053,"What is this, a scooter or a bicycle?",scooter,"This is a scooter, not a bicycle.","This is a scooter, not a bicycle.",no,correct,no
+54,GQA_VAL_054,Is this a mirror or a bed?,bed,"This is a bed, not a mirror.","This is a bed, not a mirror.",no,correct,no
+55,GQA_VAL_055,What is the vehicle that is not long?,car,The vehicle that is not long is a car.,The vehicle that is not long is a train car.,yes,correct,no
+56,GQA_VAL_056,Which kind of clothing is not gray?,glove,The woman is wearing a green jacket.,The jacket worn by the woman is not gray.,no,ambiguous,yes
+57,GQA_VAL_057,Is it outdoors?,yes,"Yes, it is outdoors.","Yes, it is outdoors.",no,correct,no
+58,GQA_VAL_058,Where was the photo taken?,street,"The photo was taken in a residential neighborhood, specifically on a street with houses and cars parked along the side.","The photo was taken on a street in a residential neighborhood, with houses and trees visible in the background.",no,acceptable,no
+59,GQA_VAL_059,Which place is pictured?,patio,A parking lot is pictured in the image.,A driveway is pictured in the image.,yes,wrong,yes
+60,GQA_VAL_060,Is it indoors?,no,"No, it is not indoors. The image shows a group of zebras standing in a grassy field, which is an outdoor setting.","No, it is not indoors. The image shows a group of zebras standing in a grassy field.",no,correct,no
+61,GQA_VAL_061,Which place is it?,beach,Beach,Beach,no,correct,no
+62,GQA_VAL_062,What weather conditions appear?,cloudless,"The image shows a dark night with a bright green glow, which suggests that the weather conditions are likely overcast or cloudy. The green glow could be due to the moonlight reflecting off the clouds or other atmospheric phenomena.","The weather conditions in the image appear to be dark and gloomy, as the clock is lit up in a dark room.",yes,wrong,yes
+63,GQA_VAL_063,Is it an indoors or outdoors scene?,indoors,"It is an indoors scene, specifically in a bedroom.","It is an indoors scene, specifically a bedroom.",no,correct,no
+64,GQA_VAL_064,What is the photo showing?,ocean,"The photo shows a man surfing in the ocean, riding a wave on his surfboard.","The photo shows a man surfing in the ocean, riding a wave on a surfboard.",no,acceptable,no
+65,GQA_VAL_065,Is it an outdoors or indoors scene?,indoors,"It is an indoors scene, specifically a living room.","It is an indoors scene, specifically a living room.",no,correct,no
+66,GQA_VAL_066,Is this a park?,yes,"Yes, this is a park.","Yes, this is a park with a fenced-in area, grass, and a playground.",no,correct,no
+67,GQA_VAL_067,Is it an indoors scene?,no,"No, it is an outdoors scene, featuring a house with a white exterior and a red door.","No, it is an outdoors scene, featuring a house with a white exterior and a red door.",no,correct,no
+68,GQA_VAL_068,What is the photo showing?,lake,"The photo shows a beach scene with a body of water, a house, and a flock of birds flying over the water.",The photo shows a river or lake with a boat and a village in the background.,yes,partial,yes
+69,GQA_VAL_069,How is the weather?,cloudless,The weather is sunny.,"The weather is sunny and clear, making it a pleasant day for the animals and visitors.",no,acceptable,no
+70,GQA_VAL_070,Which place is it?,city,City,City,no,correct,no
+71,VQAV2_VAL_001,Did the batter hit the ball?,yes,"Yes, the batter hit the ball during the baseball game.","Yes, the batter hit the ball during the baseball game.",no,correct,no
+72,VQAV2_VAL_002,Is there a painting over the arch?,yes,"Yes, there is a painting over the arch.","Yes, there is a painting over the arch, which is located in a courtyard.",no,correct,no
+73,VQAV2_VAL_003,Does the window have blinds?,yes,"Yes, the window in the bathroom has blinds.","Yes, the window has blinds.",no,correct,no
+74,VQAV2_VAL_004,Is there something in the water?,yes,"Yes, there is a boat in the water.","Yes, there is a boat in the water.",no,acceptable,no
+75,VQAV2_VAL_005,Are these animals in the wild?,no,"No, these animals are in a zoo enclosure.","No, these animals are in a zoo enclosure, which is a controlled environment designed to house and display animals for public viewing.",no,correct,no
+76,VQAV2_VAL_006,Has the pizza been eaten?,yes,"Yes, the pizza has been eaten, as there are only two slices left on the plates.","Yes, one of the pizzas has been eaten, as there is a missing slice.",no,correct,no
+77,VQAV2_VAL_007,Do you a human in the picture?,no,"No, there is no human in the picture. The image only features a sheep with yellow tags in its ears.","No, there is no human in the picture. The image only features a sheep standing in a grassy field.",no,correct,no
+78,VQAV2_VAL_008,How many fruits are on the plate?,0,There are two fruits on the plate.,There are two fruits on the plate.,no,wrong,yes
+79,VQAV2_VAL_009,How many propellers are there?,2,There are two propellers on the airplane.,There are two propellers on the airplane.,no,correct,no
+80,VQAV2_VAL_010,How many dishes are in the sink on the right?,0,There are two dishes in the sink on the right.,There are two dishes in the sink on the right.,no,wrong,yes
+81,VQAV2_VAL_011,How many giraffes?,2,There are two giraffes in the image.,There are two giraffes in the image.,no,correct,no
+82,VQAV2_VAL_012,How many dogs?,1,There is one dog in the image.,There is one dog in the image.,no,correct,no
+83,VQAV2_VAL_013,How many elephants are in the picture?,2,There are two elephants in the picture.,There are two elephants in the picture.,no,correct,no
+84,VQAV2_VAL_014,What color is the dog's collar?,brown,The dog's collar is black.,The dog's collar is black.,no,wrong,yes
+85,VQAV2_VAL_015,What is he doing to that sheep?,taking pictures,The man is taking a picture of the sheep using a camera.,The man is taking a picture of the sheep using a camera.,no,acceptable,no
+86,VQAV2_VAL_016,What is the girl about to do?,throw,The girl is about to throw a frisbee.,The girl is about to throw a frisbee in a grassy field.,no,correct,no
+87,VQAV2_VAL_017,What game is this?,tennis,This is a game of tennis.,This is a tennis game.,no,correct,no
+88,VQAV2_VAL_018,What color are his jeans?,black,The boy's jeans are black.,The boy's jeans are black.,no,correct,no
+89,VQAV2_VAL_019,What is the boy playing with?,frisbee,The boy is playing with a frisbee.,The boy is playing with a white frisbee.,no,correct,no
+90,VQAV2_VAL_020,What is the lighting called?,track,"The lighting in the image is called ""spot lighting.""",The lighting in the room is called track lighting.,yes,partial,yes
+91,TEXTVQA_VAL_001,what type of sign is this?,stop sign,This is a stop sign.,This is a stop sign.,no,correct,no
+92,TEXTVQA_VAL_002,what is the word written in red?,stiegl,"The word ""Steig"" is written in red on the label of the beer bottle.","The word written in red is ""Steigler.""",yes,partial,yes
+93,TEXTVQA_VAL_003,i wonder what will be discussed in that meeting?,government issue,"Based on the image, it is not possible to determine the exact topic of discussion in the meeting. However, the presence of a sign that says ""Government Issue"" suggests that the meeting might be related to government or political matters. The attendees could be discussing various topics such as policy decisions","Based on the image, it is difficult to determine the exact topic of discussion in the meeting. However, the presence of a yellow flyer with a cartoon drawing of a group of people suggests that the meeting might be related to a social event, a gathering, or a community activity. The flyer could be",yes,partial,yes
+94,TEXTVQA_VAL_004,what is the title of the book on top?,web accessibility,"The title of the book on top is ""Web Accessibility: A Guide to WCAG 2.0 and Section 508 Compliance.""","The title of the book on top is ""Web Accessibility: Web Master's Guide to Creating and Implementing Accessible Web Sites.""",yes,correct,no
+95,TEXTVQA_VAL_005,what is the brand on the box?,nuts enough,"The brand on the box is ""Nuts Enough.""","The brand on the box is ""Nuts Enough.""",no,correct,no
+96,TEXTVQA_VAL_006,who is the phone's manufacturer?,lg,The phone's manufacturer is LG.,The phone's manufacturer is LG.,no,correct,no
+97,TEXTVQA_VAL_007,is this live or not?,yes,"Yes, this is a live broadcast of the Senate.","Yes, this is a live event. The image shows a large crowd of people gathered in a stadium, with a television screen displaying the event. The presence of a live broadcast indicates that the event is happening in real-time and is being broadcasted to the audience.",yes,correct,no
+98,TEXTVQA_VAL_008,what company is listed on the tape on the wall?,consumer reports,"The company listed on the tape on the wall is ""Sun Microsystems.""","The tape on the wall says ""Coca-Cola.""",yes,wrong,yes
+99,TEXTVQA_VAL_009,what time does the clock say it is?,2:25,The clock in the image shows the time as 12:00.,The clock on the building shows that it is 12:00.,no,wrong,yes
+100,TEXTVQA_VAL_010,what does the sign say?,stop,"The sign says ""stop"" in Arabic.","The sign says ""stop"" in Arabic.",no,correct,no
