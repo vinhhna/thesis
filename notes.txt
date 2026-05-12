@@ -183,3 +183,34 @@ final_score(token) = lambda * relevance(token) - (1 - lambda) * max_similarity(t
     + the output is in natural language and does not need to be standardized
     + 100% cases ran successfully
     + the predictions are enough to do qualitative checks
+- Ran the handpicked dataset on 3 methods: dense, sparsevlm, mmr method (my method), stored the results in manual_review.csv
+- Results:
+| ID | Ground truth | Original top-k | MMR
+20 | GQA_VAL_020 | no | says red fruit is in the bottom | says red fruit is not in the bottom
+21 | GQA_VAL_021 | blue | red | blue
+29 | GQA_VAL_029 | yes | says no chairs | says there is a chair
+49 | GQA_VAL_049 | jacket | shoes | jacket
+55 | GQA_VAL_055 | car | train car | car
+66 | GQA_VAL_066 | yes | says not a park | says it is a park
+67 | GQA_VAL_067 | no | says indoors | says outdoors
+70 | GQA_VAL_070 | city | Street | City
+75 | VQAV2_VAL_005 | no | says animals are in the wild | says animals are in a zoo enclosure
+82 | VQAV2_VAL_012 | 1 | says two dogs | says one dog
+- Visualization intention:
+    + to show that what visual patches survived sparse pruning, and how should we interpret those patches relative to the actual model input.
+    + the visualization shows the full chain:
+        1. original image: for human context so we know what image is this
+        2. CLIP input grid: the layout after CLIP preprocessing, with the patch grid drawn on top -> the selected tokens will belong to this grid
+        3. layer 2 relevance heatmap: shows relevance score to the text prompt, showing what the model initially sees before pruning. in the images this is still kinda wrong because it is attention from early layers, it needs to propagate further to become correct.
+        4. layer 15 surviving patches: shows the patches remain after sparse pruning
+    + reminder:
+        . layers 2, 6, and 15 are LLaMA decoder layers inside the LLaVA language model, not CLIP vision-encoder layers.
+        . the flow is roughly:
+            image
+            -> CLIP vision tower
+            -> visual patch embeddings
+            -> projector / mm_projector
+            -> inserted into LLaMA token sequence as image tokens
+            -> LLaMA decoder layers
+        . SparseVLM pruning happens after the visual tokens have already been projected into the LLaMA hidden space and inserted into the language-model sequence.
+        . “Retain 64 tokens” is the paper/code’s preset compression level, not the exact final count of original image patches. In the official SparseVLM code, the 64-token preset uses a progressive pruning schedule: keep 66 visual tokens at layer 2, 30 at layer 6, and 17 original visual tokens at layer 15. The final visualization shows only the surviving original patches, so we see about 17 selected patches. The remaining information may also include merged/recycled tokens, which are not shown as original patch squares.
