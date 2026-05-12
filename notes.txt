@@ -184,18 +184,6 @@ final_score(token) = lambda * relevance(token) - (1 - lambda) * max_similarity(t
     + 100% cases ran successfully
     + the predictions are enough to do qualitative checks
 - Ran the handpicked dataset on 3 methods: dense, sparsevlm, mmr method (my method), stored the results in manual_review.csv
-- Results:
-| ID | Ground truth | Original top-k | MMR
-20 | GQA_VAL_020 | no | says red fruit is in the bottom | says red fruit is not in the bottom
-21 | GQA_VAL_021 | blue | red | blue
-29 | GQA_VAL_029 | yes | says no chairs | says there is a chair
-49 | GQA_VAL_049 | jacket | shoes | jacket
-55 | GQA_VAL_055 | car | train car | car
-66 | GQA_VAL_066 | yes | says not a park | says it is a park
-67 | GQA_VAL_067 | no | says indoors | says outdoors
-70 | GQA_VAL_070 | city | Street | City
-75 | VQAV2_VAL_005 | no | says animals are in the wild | says animals are in a zoo enclosure
-82 | VQAV2_VAL_012 | 1 | says two dogs | says one dog
 - Visualization intention:
     + to show that what visual patches survived sparse pruning, and how should we interpret those patches relative to the actual model input.
     + the visualization shows the full chain:
@@ -214,3 +202,57 @@ final_score(token) = lambda * relevance(token) - (1 - lambda) * max_similarity(t
             -> LLaMA decoder layers
         . SparseVLM pruning happens after the visual tokens have already been projected into the LLaMA hidden space and inserted into the language-model sequence.
         . “Retain 64 tokens” is the paper/code’s preset compression level, not the exact final count of original image patches. In the official SparseVLM code, the 64-token preset uses a progressive pruning schedule: keep 66 visual tokens at layer 2, 30 at layer 6, and 17 original visual tokens at layer 15. The final visualization shows only the surviving original patches, so we see about 17 selected patches. The remaining information may also include merged/recycled tokens, which are not shown as original patch squares.
+- Failure mining results:
+    + the new method (called MMR method) changes the rankin logic used during SparseVLM visual-token pruning. it still favors question-relevant visual tokens, but also penalizes redundant visual tokens so the retained set of patches is more diverse.
+    + visualization results show that SparseVLM makes mistakes when the answer depends on specific localized evidence. for example:
+        . spatial relations: left/right, top/bottom, indoors/outdoors
+        . attributes: color, object state, position of objects
+        . object existence/counting: missing a chair, counting 2 instead of 1
+        . category confusion: jacket/shoes, car/train
+        . global understanding: park/not park, city/street
+    + failure mode: the model may keep many individually high-scoring patches, but those patches do not cover enough distinct evidence needed to answer the question.
+    + evidence from inference results:
+        . 100% visualization panels have changed their final selections
+        . 44 answers changed
+            .. 10 changed for the better (20, 21, 29, 49, 55, 66, 67, 70, 75, 82)
+            .. 3 changed for the worse (1, 24, 47)
+            .. 1 changed partially better (93)
+            .. 30 changed wording/details but not clear correctness
+        . strict improvement cases:
+20 | GQA_VAL_020 | GT: no | top-k says red fruit is in the bottom | MMR says red fruit is not in the bottom
+21 | GQA_VAL_021 | GT: blue | top-k says red | MMR says blue
+29 | GQA_VAL_029 | GT: yes | top-k says no chairs | MMR says there is a chair
+49 | GQA_VAL_049 | GT: jacket | top-k says shoes | MMR says jacket
+55 | GQA_VAL_055 | GT: car | top-k says train car | MMR says car
+66 | GQA_VAL_066 | GT: yes | top-k says not a park | MMR says it is a park
+67 | GQA_VAL_067 | GT: no | top-k says indoors | MMR says outdoors
+70 | GQA_VAL_070 | GT: city | top-k says Street | MMR says City
+75 | VQAV2_VAL_005 | GT: no | top-k says animals are in the wild | MMR says animals are in a zoo enclosure
+82 | VQAV2_VAL_012 | GT: 1 | top-k says two dogs | MMR says one dog
+    + this is not yet a full benchmarkclaim, it is qualitative and failure-focused evidence
+    + a stronger final claim would require evaluating the method on complete benchmark sets and reporting accuracy, latency, and token/FLOP tradeoffs.
+    + explanations of improvements:
+20 | GQA_VAL_020
+Missing evidence: red fruit location.
+MMR keeps the upper-left fruit/shelf area, while top-k is more distracted by cat/floor regions.
+
+21 | GQA_VAL_021
+Missing evidence: blue helmet at the top.
+MMR keeps more patches around the batter/upper-body/helmet region. This supports the corrected answer “blue.”
+
+49 | GQA_VAL_049
+Missing evidence: heavy clothing item / jacket.
+MMR shifts more surviving evidence toward the person/clothing region instead of spending many patches on floor/suitcase-like regions.
+
+66 | GQA_VAL_066
+Missing evidence: park context.
+MMR keeps more field/fence/playground-context patches. This supports answering that the scene is a park.
+
+75 | VQAV2_VAL_005
+Missing evidence: zoo/enclosure context.
+MMR keeps more distributed patches over animals plus enclosure/fence context. This supports answering “not wild,” i.e. zoo enclosure.
+
+82 | VQAV2_VAL_012
+Missing evidence: count of dogs.
+MMR reduces redundant focus around the same local area and keeps broader context around the paddleboard/dog scene. This is consistent with correcting “two dogs” to “one dog,” though it is less visually obvious than case 20.
+    + the strongest visual evidence is in cases 20, 21, 49, 66, and 75. in these cases, MMR appears to preserve distinct missing evidence that top-k either misses or under-represents. other strict improvements show answer-level gains, but the visualization alone is less sufficient to prove the mechanism.
