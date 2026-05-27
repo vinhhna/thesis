@@ -229,7 +229,7 @@ final_score(token) = lambda * relevance(token) - (1 - lambda) * max_similarity(t
 70 | GQA_VAL_070 | GT: city | top-k says Street | MMR says City
 75 | VQAV2_VAL_005 | GT: no | top-k says animals are in the wild | MMR says animals are in a zoo enclosure
 82 | VQAV2_VAL_012 | GT: 1 | top-k says two dogs | MMR says one dog
-    + this is not yet a full benchmarkclaim, it is qualitative and failure-focused evidence
+    + this is not yet a full benchmark claim, it is qualitative and failure-focused evidence
     + a stronger final claim would require evaluating the method on complete benchmark sets and reporting accuracy, latency, and token/FLOP tradeoffs.
     + explanations of improvements:
 20 | GQA_VAL_020
@@ -256,3 +256,26 @@ MMR keeps more distributed patches over animals plus enclosure/fence context. Th
 Missing evidence: count of dogs.
 MMR reduces redundant focus around the same local area and keeps broader context around the paddleboard/dog scene. This is consistent with correcting “two dogs” to “one dog,” though it is less visually obvious than case 20.
     + the strongest visual evidence is in cases 20, 21, 49, 66, and 75. in these cases, MMR appears to preserve distinct missing evidence that top-k either misses or under-represents. other strict improvements show answer-level gains, but the visualization alone is less sufficient to prove the mechanism.
+
+
+TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị trí tương đồng như nhau và làm nó lặp nhiều.
+
+- Newest task: summarizing experiments
+    + the project will not rerun all original experiments from the paper because the goal of the project is not to re-create the paper, but to evaluate a specific improvement in the token selection process.
+        . the original paper has various benchmarks, if re-run all the experiment workload is very heavy, while not all benchmarks help support the claim of the project.
+    + gqa will be selected as the main benchmark because it can check visual reasoning, especially spatial relationships between objects inside an image. 
+        . this is close to the claim of my thesis because if the visual token selection does not return good results, the results reflected by gqa will fluctuate significantly.
+    + pope will be selected as the secondary benchmark because it can check for object-level hallucination: the model may tell that an object exists but in fact it is not, or recognise the wrong evidence.
+        . therefore if pruning accidentally removes important object evidence, the model will hallucinate and lead to low pope results.
+        . pope's results is easier to explain than mmvet or mme.
+    + failure mining set will augment what:
+        . gqa and pope does not show where sparsevlm gets wrong because of which visual tokens, or where is the information missing. 
+        . our dataset will keep the evidence of all methods, and shows the difference in behaviour of threshold filtering method to our method.
+    + we choose 128 and 64 to evaluate because:
+        . 128: the realistic sparse setting, keeping a fairly enough amount of information
+        . 64: pressure test, agressive sparsification, can show most difference between different methods
+    + how does all the experiment results support the claims?
+        . official benchmark: can the new method keep the same efficiency on the same benchmarks?
+        . failure-driven analysis: what can the new method fix, and how?
+        . combining them together will strengthen the claim
+    
