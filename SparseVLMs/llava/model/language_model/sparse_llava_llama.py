@@ -62,6 +62,9 @@ class LlavaLlamaDynamicForCausalLM(LlamaDynamicvitForCausalLM, LlavaMetaForCausa
         token_length_list = [],
         pre_prompt_length_list = [],
         retained_tokens = 192,
+        selection_method = "mmr",
+        threshold_tau = 0.85,
+        candidate_pool_factor = 2,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
         if inputs_embeds is None:
@@ -99,7 +102,10 @@ class LlavaLlamaDynamicForCausalLM(LlamaDynamicvitForCausalLM, LlavaMetaForCausa
             image_shape = image_shape,
             token_length_list = token_length_list,
             pre_prompt_length_list = pre_prompt_length_list,
-            retained_tokens=retained_tokens
+            retained_tokens=retained_tokens,
+            selection_method=selection_method,
+            threshold_tau=threshold_tau,
+            candidate_pool_factor=candidate_pool_factor,
         )
 
     @torch.no_grad()
@@ -109,6 +115,9 @@ class LlavaLlamaDynamicForCausalLM(LlamaDynamicvitForCausalLM, LlavaMetaForCausa
         images: Optional[torch.Tensor] = None,
         image_sizes: Optional[torch.Tensor] = None,
         retained_tokens = 192,
+        selection_method = "mmr",
+        threshold_tau = 0.85,
+        candidate_pool_factor = 2,
         image_shape=576,
         token_length_list = [],
         pre_prompt_length_list = [],
@@ -150,6 +159,9 @@ class LlavaLlamaDynamicForCausalLM(LlamaDynamicvitForCausalLM, LlavaMetaForCausa
             token_length_list = token_length_list,  
             pre_prompt_length_list = pre_prompt_length_list,     
             retained_tokens = retained_tokens,
+            selection_method = selection_method,
+            threshold_tau = threshold_tau,
+            candidate_pool_factor = candidate_pool_factor,
             **kwargs
         )
 

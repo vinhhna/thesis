@@ -15,6 +15,7 @@ import logging
 import datetime
 from PIL import Image
 import math
+from copy import deepcopy
 
 
 def split_list(lst, n):
@@ -96,6 +97,7 @@ def eval_model(args):
     data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config)
     
     retained_tokens = args.retained_tokens
+    adaptive_retained_counts = []
     for (input_ids, image_tensor, image_sizes), line in tqdm(zip(data_loader, questions), total=len(questions)):
         idx = line["question_id"]
         cur_prompt = line["text"]
@@ -107,6 +109,9 @@ def eval_model(args):
                 images=image_tensor.to(dtype=torch.float16, device='cuda', non_blocking=True),
                 image_sizes=image_sizes,
                 retained_tokens = retained_tokens,
+                selection_method=args.selection_method,
+                threshold_tau=args.threshold_tau,
+                candidate_pool_factor=args.candidate_pool_factor,
                 do_sample=True if args.temperature > 0 else False,
                 temperature=args.temperature,
                 top_p=args.top_p,
@@ -114,6 +119,20 @@ def eval_model(args):
                 max_new_tokens=args.max_new_tokens,
                 use_cache=True)
         outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
+        sparse_metadata = {}
+        if hasattr(model, "get_model") and hasattr(model.get_model(), "last_sparse_metadata"):
+            sparse_metadata = deepcopy(model.get_model().last_sparse_metadata)
+        metadata = {
+            "selection_method": args.selection_method,
+            "retained_tokens": retained_tokens,
+            "threshold_tau": args.threshold_tau,
+            "candidate_pool_factor": args.candidate_pool_factor,
+        }
+        metadata.update(sparse_metadata)
+        if args.selection_method == "threshold_adaptive":
+            retained_count = metadata.get("retained_token_count")
+            if retained_count is not None:
+                adaptive_retained_counts.append(int(retained_count))
 
         ans_id = shortuuid.uuid()
         ans_file.write(json.dumps({"question_id": idx,
@@ -121,9 +140,23 @@ def eval_model(args):
                                    "text": outputs,
                                    "answer_id": ans_id,
                                    "model_id": model_name,
-                                   "metadata": {}}) + "\n")
+                                   "metadata": metadata}) + "\n")
         # ans_file.flush()
     ans_file.close()
+
+    if args.selection_method == "threshold_adaptive" and adaptive_retained_counts:
+        stats_file = os.path.splitext(answers_file)[0] + "_sparse_stats.json"
+        with open(stats_file, "w") as f:
+            json.dump({
+                "selection_method": args.selection_method,
+                "retained_tokens": retained_tokens,
+                "threshold_tau": args.threshold_tau,
+                "candidate_pool_factor": args.candidate_pool_factor,
+                "retained_token_count": adaptive_retained_counts,
+                "average_retained_tokens": sum(adaptive_retained_counts) / len(adaptive_retained_counts),
+                "min_retained_tokens": min(adaptive_retained_counts),
+                "max_retained_tokens": max(adaptive_retained_counts),
+            }, f, indent=2)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -140,6 +173,10 @@ if __name__ == "__main__":
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--max_new_tokens", type=int, default=128)
     parser.add_argument("--retained_tokens", type=int, default=192)
+    parser.add_argument("--selection_method", type=str, default="mmr",
+                        choices=["topk", "mmr", "threshold_fixed", "threshold_adaptive"])
+    parser.add_argument("--threshold_tau", type=float, default=0.85)
+    parser.add_argument("--candidate_pool_factor", type=int, default=2)
     args = parser.parse_args()
 
     eval_model(args)

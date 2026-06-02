@@ -278,4 +278,34 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
         . official benchmark: can the new method keep the same efficiency on the same benchmarks?
         . failure-driven analysis: what can the new method fix, and how?
         . combining them together will strengthen the claim
-    
+- Experiment protocols:
+    + written in evaluation_protocol.md
+    + there are 21 experiment runs total
+    + for each dataset, the methods are:
+        . dense (vanilla) (there is only one run)
+        . sparsevlm-original
+        . ours
+        . threshold filtering
+    + metrics for failure mining:
+        . quantitative:
+            1. correct/incorrect per sample
+            2. overall accuracy or correctness rate
+            3. recovery rate: cases where sparsevlm fails but our method succeeds
+            4. comparision against threshold filtering recovery rate
+        . qualitative:
+            1. failure category / label
+            2. cause of failure
+            3. how selected visual tokens differ across methods
+    + final results format: results/summary/final_evaluation_table.csv
+- Questions to ask:
+    + related to debugging mmr method:
+        . the current results are correct, there are no bugs and things are working as intended
+        . it is taking diversity, but it's the diversity in the internal states that the model sees after layers, not the diversity in what human eye is seeing
+        . question: do we adjust to use human eye diversity, or computer-vision diversity?
+    + question to threshold-filtering method:
+        . this method works by selecting from a pool of 2*k candidates, then if the second patch is similar to the first patch by a threshold (for example 0.8 in cosine similarity), then we will not choose it.
+        . the question here is, do we add a limit to how many minimum or maximum do we keep the patches?
+        . why? the research problem we are refering to is: token selection quality of the methods, which one is better.
+            1. in terms of token selection quality, we cannot compare: if the result is higher, we don't know if it is really better (because of it can keep more tokens or it is truly smarter). -> which is  changing the variable we are observing.
+            2. if we still want to compare, then what we are effectively comparing is the accuracy and efficiency trade-off.
+

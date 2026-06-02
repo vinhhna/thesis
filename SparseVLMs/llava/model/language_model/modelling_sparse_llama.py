@@ -91,6 +91,7 @@ class LlamaDynamicvitModel(LlamaModel):
         self.generate_process_count = 0         
         self.total_cuda_time = 0
         self.causal_inference_cuda_time = 0
+        self.last_sparse_metadata = {}
         # ------------------------------------------- Sparse ----------------------------------------------
         self._use_sdpa = config._attn_implementation == "sdpa"
         self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
@@ -116,6 +117,9 @@ class LlamaDynamicvitModel(LlamaModel):
         token_length_list=[],
         pre_prompt_length_list = [],
         retained_tokens = 192,
+        selection_method = "mmr",
+        threshold_tau = 0.85,
+        candidate_pool_factor = 2,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -196,10 +200,24 @@ class LlamaDynamicvitModel(LlamaModel):
         v_token_start = pre_prompt_length_list[0] if len(pre_prompt_length_list) != 0 else 0 # 35
         text_token_start = v_token_start + image_shape # 611
         v_token_num = image_shape
+        sparse_metadata_active = len(pre_prompt_length_list) != 0 and hidden_states.shape[1] != 1
+        visual_token_sources = list(range(_to_int(image_shape))) if sparse_metadata_active else []
+
+        if sparse_metadata_active:
+            self.last_sparse_metadata = {
+                "selection_method": str(selection_method),
+                "retained_tokens": int(retained_tokens),
+                "threshold_tau": float(threshold_tau),
+                "candidate_pool_factor": int(candidate_pool_factor),
+                "layer_token_stats": [],
+                "retained_token_count": None,
+                "selected_token_indices": [],
+                "selected_original_token_indices": [],
+            }
 
         # if (len(pre_prompt_length_list) != 0 and hidden_states.shape[1] !=1):
         # select text tokens
-        if (len(pre_prompt_length_list) != 0 and hidden_states.shape[1] !=1):
+        if sparse_metadata_active:
             v_t = hidden_states[:, v_token_start: text_token_start, :]
             t_t = hidden_states[:, text_token_start: , :]
             m_v_t = v_t @ t_t.transpose(1, 2) # [1, 576, 53]
@@ -210,20 +228,20 @@ class LlamaDynamicvitModel(LlamaModel):
 
         num_token = []
 
-        if (len(pre_prompt_length_list) != 0 and hidden_states.shape[1] !=1):
+        if sparse_metadata_active:
             total_start_event = torch.cuda.Event(enable_timing=True)
             total_end_event = torch.cuda.Event(enable_timing=True)
             torch.cuda.synchronize()
             total_start_event.record()
 
         for layer_idx, decoder_layer in enumerate(self.layers):
-            if (len(pre_prompt_length_list) != 0 and hidden_states.shape[1] !=1):       
+            if sparse_metadata_active:
                 n = hidden_states.shape[1]                                  # token num
                 d = hidden_states.shape[2]                                  # hidden state size 
                 m = self.layers[layer_idx].mlp.up_proj.out_features         # intermediate size of the FFN
                 self.all_FLOPs += 4 * n * (d**2) + 2 *(n**2) * d + 3*n*d*m 
             # Sparse Layers
-            if layer_idx in self.pruning_loc and len(pre_prompt_length_list) != 0 and hidden_states.shape[1] !=1:
+            if layer_idx in self.pruning_loc and sparse_metadata_active:
                 
                 # Training
                 if self.training:
@@ -268,7 +286,34 @@ class LlamaDynamicvitModel(LlamaModel):
                     attn_logits = layer_outputs[2]
                     visual_states = layer_outputs[0][:, v_token_start:text_token_start, :]
                     
-                    pred_score_vis, s_flag, relation_vis_text = attn_postprocess_mmr(attn_logits, visual_states, v_token_start, v_token_num, text_token_start, t_token_idx, layer_idx,retained_tokens) # B, L_v
+                    pred_score_vis, s_flag, relation_vis_text, selection_stats = attn_postprocess_select(
+                        selection_method,
+                        attn_logits,
+                        visual_states,
+                        v_token_start,
+                        v_token_num,
+                        text_token_start,
+                        t_token_idx,
+                        layer_idx,
+                        retained_tokens,
+                        threshold_tau=threshold_tau,
+                        candidate_pool_factor=candidate_pool_factor,
+                    ) # B, L_v
+                    selected_local_indices = selection_stats.get("selected_token_indices", [[]])
+                    selected_local_indices = selected_local_indices[0] if len(selected_local_indices) > 0 else []
+                    selected_sources = [
+                        visual_token_sources[idx] if idx < len(visual_token_sources) else -1
+                        for idx in selected_local_indices
+                    ]
+                    selected_original_indices = [
+                        idx for idx in selected_sources if isinstance(idx, int) and idx >= 0
+                    ]
+                    selection_stats["selected_token_indices"] = selected_local_indices
+                    selection_stats["selected_visual_token_indices"] = selected_local_indices
+                    selection_stats["selected_sequence_token_indices"] = [
+                        int(v_token_start) + idx for idx in selected_local_indices
+                    ]
+                    selection_stats["selected_original_token_indices"] = selected_original_indices
                     policy = torch.ones(B, hidden_states.shape[1], dtype=hidden_states.dtype, device=hidden_states.device)
                     policy[:, v_token_start:text_token_start] = pred_score_vis.type(dtype = hidden_states.dtype)
 
@@ -301,7 +346,7 @@ class LlamaDynamicvitModel(LlamaModel):
 
                         select_token_idx = torch.where(policy == 1)[1].unsqueeze(0)  # B, L_new
                         select_token = batch_index_select(layer_outputs[0], select_token_idx)
-                        select_vis_token_num = pred_score_vis.sum()
+                        select_vis_token_num = _to_int(pred_score_vis.sum())
                         select_and_merge_token = torch.cat((select_token[:,:v_token_start+select_vis_token_num,:] ,
                                 merge_sparse_token,
                                 select_token[:,v_token_start+select_vis_token_num:,:])
@@ -312,7 +357,8 @@ class LlamaDynamicvitModel(LlamaModel):
                         position_ids = position_ids[:, :len(select_token_idx[0])+cluster_num]
                         prev_decision = policy
                         # update
-                        v_token_num = pred_score_vis.sum() + cluster_num # B == 1
+                        v_token_num = select_vis_token_num + cluster_num # B == 1
+                        visual_token_sources = selected_sources + [-1] * int(cluster_num)
                         # print(layer_idx, v_token_num)
                         text_token_start = v_token_start + v_token_num
                     else:
@@ -322,9 +368,19 @@ class LlamaDynamicvitModel(LlamaModel):
                         prev_decision = policy
                         
                         # update
-                        v_token_num = pred_score_vis.sum() # B == 1
+                        v_token_num = _to_int(pred_score_vis.sum()) # B == 1
+                        visual_token_sources = selected_sources
                         # print(layer_idx, v_token_num)
                         text_token_start = v_token_start + v_token_num
+
+                    selection_stats["retained_token_count"] = int(v_token_num)
+                    selection_stats["merge_cluster_count"] = (
+                        int(v_token_num) - int(selection_stats.get("selected_count", 0))
+                    )
+                    self.last_sparse_metadata["layer_token_stats"].append(selection_stats)
+                    self.last_sparse_metadata["retained_token_count"] = int(v_token_num)
+                    self.last_sparse_metadata["selected_token_indices"] = selected_local_indices
+                    self.last_sparse_metadata["selected_original_token_indices"] = selected_original_indices
 
                 idx_sprase_layer = idx_sprase_layer + 1 
             # Normal Layers
@@ -366,7 +422,7 @@ class LlamaDynamicvitModel(LlamaModel):
 
             num_token.append(v_token_num)
         
-        if len(pre_prompt_length_list) != 0 and hidden_states.shape[1] !=1:
+        if sparse_metadata_active:
             total_end_event.record()
             torch.cuda.synchronize()  
             total_cuda_time_ms = total_start_event.elapsed_time(total_end_event)
@@ -1010,6 +1066,9 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
         token_length_list=[],
         pre_prompt_length_list = [],
         retained_tokens = 192,
+        selection_method = "mmr",
+        threshold_tau = 0.85,
+        candidate_pool_factor = 2,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1031,7 +1090,10 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
             image_shape=image_shape,
             token_length_list = token_length_list,
             pre_prompt_length_list = pre_prompt_length_list,
-            retained_tokens = retained_tokens
+            retained_tokens = retained_tokens,
+            selection_method = selection_method,
+            threshold_tau = threshold_tau,
+            candidate_pool_factor = candidate_pool_factor,
         )
 
         prev_decision = outputs[0]
@@ -1090,6 +1152,9 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
         token_length_list=[],
         pre_prompt_length_list = [],
         retained_tokens = 192,
+        selection_method = "mmr",
+        threshold_tau = 0.85,
+        candidate_pool_factor = 2,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         if synced_gpus is None:
@@ -1311,6 +1376,9 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
                 token_length_list = token_length_list,
                 pre_prompt_length_list = pre_prompt_length_list,
                 retained_tokens = retained_tokens,
+                selection_method = selection_method,
+                threshold_tau = threshold_tau,
+                candidate_pool_factor = candidate_pool_factor,
                 **model_kwargs,
             )
 
@@ -1554,6 +1622,9 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
         token_length_list = [],
         pre_prompt_length_list = [],
         retained_tokens = 192,
+        selection_method = "mmr",
+        threshold_tau = 0.85,
+        candidate_pool_factor = 2,
         **model_kwargs,
     ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
         r"""
@@ -1723,6 +1794,9 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
                 token_length_list = token_length_list,
                 pre_prompt_length_list = pre_prompt_length_list,
                 retained_tokens = retained_tokens,
+                selection_method = selection_method,
+                threshold_tau = threshold_tau,
+                candidate_pool_factor = candidate_pool_factor,
             )
             outputs = outputs[2]
             if synced_gpus and this_peer_finished:

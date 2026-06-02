@@ -116,6 +116,10 @@ def eval_model(args):
             input_ids,
             images=images_tensor,
             image_sizes=image_sizes,
+            retained_tokens=args.retained_tokens,
+            selection_method=args.selection_method,
+            threshold_tau=args.threshold_tau,
+            candidate_pool_factor=args.candidate_pool_factor,
             do_sample=True if args.temperature > 0 else False,
             temperature=args.temperature,
             top_p=args.top_p,
@@ -140,6 +144,11 @@ if __name__ == "__main__":
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--max_new_tokens", type=int, default=512)
+    parser.add_argument("--retained_tokens", type=int, default=192)
+    parser.add_argument("--selection_method", type=str, default="mmr",
+                        choices=["topk", "mmr", "threshold_fixed", "threshold_adaptive"])
+    parser.add_argument("--threshold_tau", type=float, default=0.85)
+    parser.add_argument("--candidate_pool_factor", type=int, default=2)
     args = parser.parse_args()
 
     eval_model(args)
