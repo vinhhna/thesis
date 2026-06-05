@@ -1,23 +1,16 @@
-# Sparse interpretability visualization on Kaggle
+# SparseVLM Kaggle Smoke Test
 
-This notebook reruns every row in `failure_mining_set.csv` with sparse inference, captures selected original visual patch indices and relevance scores, and displays:
+These cells run a small 10-sample end-to-end smoke test for every algorithm and token setting in `evaluation_protocol_updated.md`. The output goes to `/kaggle/working/smoke_protocol_results`.
 
-- the full original image
-- the CLIP-preprocessed model-input image with a patch grid
-- an early-layer relevance heatmap
-- final surviving original patches
+Run Cell 2 only after a fresh clone or package reset, then restart the Kaggle kernel before continuing.
 
-Cell 4 keeps the 4-panel visualization path and forces the original SparseVLM ranking method: visual tokens are selected with `attn_postprocess_topk(...)`, not the MMR ranking variant.
-
-Merged tokens are intentionally not visualized. The notebook records when merged tokens are present in the trace JSONL, so these figures should be interpreted as surviving original patches and relevance over original patches, not complete model state.
-
-By default, the main figure uses layer `2` for the heatmap and layer `15` for final surviving original patches. For a debug run, set `ROW_FILTER_1_INDEXED` in Cell 5 to a list such as `[1, 15, 44]`.
-
-Cell 1:
+Cell 1: Clone repo
 ```python
 %env USE_FLAX=NO
 %env USE_JAX=NO
 %env USE_TF=NO
+%env WANDB_DISABLED=true
+%env WANDB_MODE=disabled
 
 %cd /kaggle/working
 !rm -rf thesis
@@ -27,21 +20,58 @@ Cell 1:
 !git rev-parse --short HEAD
 ```
 
-Cell 2:
+Cell 2: Install runtime packages
 ```python
-!python -m pip install --upgrade pip setuptools wheel
+import subprocess
+import sys
 
-!python -m pip install --force-reinstall --no-deps torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 
-!python -m pip install "numpy<2" protobuf sentencepiece shortuuid
-!python -m pip install transformers==4.37.2 tokenizers==0.15.1 accelerate==0.21.0 peft==0.7.1
-!python -m pip install einops==0.6.1 einops-exts==0.0.4 timm==0.6.13 "markdown2[all]"
-!python -m pip uninstall -y bitsandbytes jax jaxlib flax optax chex orbax-checkpoint
+def pip(*args):
+    subprocess.check_call([sys.executable, "-m", "pip", *args])
+
+
+pip("install", "--upgrade", "pip", "setuptools", "wheel")
+
+pip(
+    "install",
+    "--force-reinstall",
+    "--no-deps",
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+    "torchaudio==2.5.1",
+    "--index-url",
+    "https://download.pytorch.org/whl/cu121",
+)
+
+pip(
+    "uninstall",
+    "-y",
+    "tensorflow",
+    "tensorflow-cpu",
+    "tensorflow-io-gcs-filesystem",
+    "keras",
+    "tf-keras",
+    "tensorboard",
+    "tensorboard-data-server",
+    "pandas",
+    "wandb",
+    "bitsandbytes",
+    "jax",
+    "jaxlib",
+    "flax",
+    "optax",
+    "chex",
+    "orbax-checkpoint",
+)
+
+pip("install", "--force-reinstall", "numpy==1.26.4", "protobuf", "sentencepiece", "shortuuid")
+pip("install", "transformers==4.37.2", "tokenizers==0.15.1", "accelerate==0.21.0", "peft==0.7.1")
+pip("install", "einops==0.6.1", "einops-exts==0.0.4", "timm==0.6.13", "markdown2[all]")
 
 print("Restart the Kaggle kernel after this cell finishes, then continue from Cell 3.")
 ```
 
-Cell 3:
+Cell 3: Runtime paths and environment
 ```python
 %cd /kaggle/working/thesis/SparseVLMs
 
@@ -52,185 +82,264 @@ import torch
 REPO_ROOT = "/kaggle/working/thesis"
 LLAVA_ROOT = "/kaggle/working/thesis/SparseVLMs"
 CSV_PATH = f"{REPO_ROOT}/failure_mining_set.csv"
-OUTPUT_DIR = "/kaggle/working/sparse_topk_interpretability_visualizations"
-TRACE_JSONL = f"{OUTPUT_DIR}/topk_interpretability_traces.jsonl"
+OUTPUT_ROOT = "/kaggle/working/smoke_protocol_results"
 
 os.environ["USE_FLAX"] = "NO"
 os.environ["USE_JAX"] = "NO"
 os.environ["USE_TF"] = "NO"
+os.environ["WANDB_DISABLED"] = "true"
+os.environ["WANDB_MODE"] = "disabled"
 os.environ["PYTHONPATH"] = LLAVA_ROOT
 if LLAVA_ROOT not in sys.path:
     sys.path.insert(0, LLAVA_ROOT)
 
 print("Torch:", torch.__version__)
 print("Torch CUDA build:", torch.version.cuda)
+print("CUDA available:", torch.cuda.is_available())
+print("Output root:", OUTPUT_ROOT)
 ```
 
-Cell 4:
+Cell 4: Selector unit tests
 ```python
-from pathlib import Path
-
-
-def patch_sparse_topk_trace():
-    """Patch SparseVLMs to use original top-k ranking and record original-patch selections and scores."""
-    path = Path(LLAVA_ROOT) / "llava/model/language_model/modelling_sparse_llama.py"
-    text = path.read_text(encoding="utf-8")
-
-    topk_call = """                    pred_score_vis, s_flag, relation_vis_text = attn_postprocess_topk(attn_logits, v_token_start, v_token_num, text_token_start, t_token_idx, layer_idx,retained_tokens) # B, L_v"""
-    mmr_call = """                    pred_score_vis, s_flag, relation_vis_text = attn_postprocess_mmr(attn_logits, visual_states, v_token_start, v_token_num, text_token_start, t_token_idx, layer_idx,retained_tokens) # B, L_v"""
-
-    def replace_once(old, new):
-        nonlocal text
-        if old not in text:
-            raise RuntimeError("Patch anchor not found. The SparseVLMs source may have changed.")
-        text = text.replace(old, new, 1)
-
-    if mmr_call in text:
-        text = text.replace(mmr_call, topk_call, 1)
-        ranking_status = "Ranking patch applied: MMR -> SparseVLM original top-k."
-    elif topk_call in text:
-        ranking_status = "Ranking already uses SparseVLM original top-k."
-    else:
-        raise RuntimeError("Sparse ranking call not found. Expected the original top-k call or the MMR call.")
-
-    if "original_token_scores" in text:
-        path.write_text(text, encoding="utf-8")
-        print(ranking_status)
-        print("Sparse token trace patch already present.")
-        return
-    if "visual_token_sources = torch.arange" in text:
-        raise RuntimeError("Old selected-token patch detected. Rerun Cell 1 to reclone the repo, then rerun Cells 3-6.")
-
-    replace_once(
-        """        self.causal_inference_cuda_time = 0
-        # ------------------------------------------- Sparse ----------------------------------------------""",
-        """        self.causal_inference_cuda_time = 0
-        self.capture_visual_tokens = False
-        self.visual_token_trace = []
-        # ------------------------------------------- Sparse ----------------------------------------------""",
-    )
-    replace_once(
-        """        v_token_start = pre_prompt_length_list[0] if len(pre_prompt_length_list) != 0 else 0 # 35
-        text_token_start = v_token_start + image_shape # 611
-        v_token_num = image_shape""",
-        """        v_token_start = pre_prompt_length_list[0] if len(pre_prompt_length_list) != 0 else 0 # 35
-        text_token_start = v_token_start + image_shape # 611
-        v_token_num = image_shape
-
-        capture_visual_tokens = (
-            getattr(self, "capture_visual_tokens", False)
-            and len(pre_prompt_length_list) != 0
-            and hidden_states.shape[1] != 1
-        )
-        if capture_visual_tokens:
-            self.visual_token_trace = []
-            visual_token_sources = torch.arange(
-                int(v_token_num), device=hidden_states.device, dtype=torch.long
-            ).unsqueeze(0).expand(B, -1)
-        else:
-            visual_token_sources = None""",
-    )
-    replace_once(
-        topk_call + """
-                    policy = torch.ones(B, hidden_states.shape[1], dtype=hidden_states.dtype, device=hidden_states.device)""",
-        topk_call + """
-
-                    if capture_visual_tokens:
-                        selected_current_idx = torch.where(pred_score_vis[0].bool())[0]
-                        selected_original_idx = visual_token_sources[0, selected_current_idx]
-                        selected_original_idx = selected_original_idx[selected_original_idx >= 0]
-                        valid_original_idx = torch.where(visual_token_sources[0] >= 0)[0]
-                        score_original_idx = visual_token_sources[0, valid_original_idx].detach().cpu().tolist()
-                        score_values = relation_vis_text[0, valid_original_idx].float().detach().cpu().tolist()
-                        current_visual_tokens = int(v_token_num.item()) if isinstance(v_token_num, torch.Tensor) else int(v_token_num)
-                        merged_tokens_present = int((visual_token_sources[0] < 0).sum().item())
-                        self.visual_token_trace.append({
-                            "layer": int(layer_idx),
-                            "current_visual_tokens": current_visual_tokens,
-                            "selected_original_indices": selected_original_idx.detach().cpu().tolist(),
-                            "original_token_scores": [
-                                {"index": int(idx), "score": float(score)}
-                                for idx, score in zip(score_original_idx, score_values)
-                            ],
-                            "merged_tokens_present": merged_tokens_present,
-                        })
-
-                    policy = torch.ones(B, hidden_states.shape[1], dtype=hidden_states.dtype, device=hidden_states.device)""",
-    )
-    replace_once(
-        """                        layer_outputs = (select_and_merge_token, layer_outputs[1])  # B, L, C
-                        position_ids = position_ids[:, :len(select_token_idx[0])+cluster_num]
-                        prev_decision = policy
-                        # update
-                        v_token_num = pred_score_vis.sum() + cluster_num # B == 1
-                        # print(layer_idx, v_token_num)
-                        text_token_start = v_token_start + v_token_num""",
-        """                        layer_outputs = (select_and_merge_token, layer_outputs[1])  # B, L, C
-                        position_ids = position_ids[:, :len(select_token_idx[0])+cluster_num]
-                        prev_decision = policy
-                        # update
-                        v_token_num = pred_score_vis.sum() + cluster_num # B == 1
-                        # print(layer_idx, v_token_num)
-                        text_token_start = v_token_start + v_token_num
-                        if capture_visual_tokens:
-                            selected_current_idx = torch.where(pred_score_vis[0].bool())[0]
-                            selected_sources = visual_token_sources[:, selected_current_idx]
-                            merged_sources = torch.full((B, cluster_num), -1, dtype=torch.long, device=hidden_states.device)
-                            visual_token_sources = torch.cat((selected_sources, merged_sources), dim=1)""",
-    )
-    replace_once(
-        """                        # update
-                        v_token_num = pred_score_vis.sum() # B == 1
-                        # print(layer_idx, v_token_num)
-                        text_token_start = v_token_start + v_token_num""",
-        """                        # update
-                        v_token_num = pred_score_vis.sum() # B == 1
-                        # print(layer_idx, v_token_num)
-                        text_token_start = v_token_start + v_token_num
-                        if capture_visual_tokens:
-                            selected_current_idx = torch.where(pred_score_vis[0].bool())[0]
-                            visual_token_sources = visual_token_sources[:, selected_current_idx]""",
-    )
-
-    path.write_text(text, encoding="utf-8")
-    print(ranking_status)
-    print("Patched:", path)
-
-
-patch_sparse_topk_trace()
+# Fast selector unit tests. This catches dispatch, fixed-k backfill, and adaptive
+# threshold regressions before loading the 7B model.
+!python tests/test_sparse_selection.py
 ```
 
-Cell 5:
+Cell 5: Smoke-test helpers
 ```python
 import csv
 import json
-import math
+import re
 import time
+from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
+import shortuuid
 import torch
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-from IPython.display import Image as DisplayImage
-from IPython.display import Markdown, display
+from PIL import Image
 
 from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
 from llava.conversation import conv_templates
-from llava.mm_utils import expand2square, get_model_name_from_path, process_images, tokenizer_image_token
+from llava.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
 from llava.model.builder import load_pretrained_model
 from llava.utils import disable_torch_init
 
 
+# ----- Config -----
+
 MODEL_PATH = "liuhaotian/llava-v1.5-7b"
 CONV_MODE = "llava_v1"
-MAX_NEW_TOKENS = 64
-RETAINED_TOKENS = 64
-RANKING_METHOD = "sparsevlm_original_topk"
-ROW_FILTER_1_INDEXED = None
-HEATMAP_LAYER = 2
-FINAL_SELECTED_LAYER = 15
-SAVE_ALL_LAYERS = True
-SHOW_ALL_LAYERS = False
+SMOKE_SAMPLE_COUNT = 10
+MAX_NEW_TOKENS = 32
+TEMPERATURE = 0.0
+NUM_BEAMS = 1
+CANDIDATE_POOL_FACTOR = 2
+DEFAULT_THRESHOLD_TAU = 0.85
+SPARSE_PRUNING_LOC = [2, 6, 15]
 
+OUTPUT_ROOT = Path(OUTPUT_ROOT)
+RESULTS_ROOT = OUTPUT_ROOT / "results"
+LOG_DIR = OUTPUT_ROOT / "logs"
+SUMMARY_DIR = RESULTS_ROOT / "summary"
+MANIFEST_PATH = OUTPUT_ROOT / "smoke_manifest.json"
+
+for path in [RESULTS_ROOT, LOG_DIR, SUMMARY_DIR]:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+# ----- Run catalog -----
+
+@dataclass(frozen=True)
+class SmokeRun:
+    run_id: str
+    dataset_key: str
+    method_label: str
+    selection_method: str
+    retained_tokens: int
+    threshold_tau: float
+    prediction_relpath: str
+    output_relpath: str
+
+
+def make_run(
+    dataset_key,
+    run_id,
+    method_label,
+    selection_method,
+    retained_tokens,
+    stem,
+    threshold_tau=DEFAULT_THRESHOLD_TAU,
+):
+    return SmokeRun(
+        run_id=run_id,
+        dataset_key=dataset_key,
+        method_label=method_label,
+        selection_method=selection_method,
+        retained_tokens=retained_tokens,
+        threshold_tau=float(threshold_tau),
+        prediction_relpath=f"{dataset_key}/predictions/{stem}.jsonl",
+        output_relpath=f"{dataset_key}/{stem}.csv",
+    )
+
+
+def build_protocol_smoke_runs():
+    runs = []
+    dataset_specs = [("gqa", "GQA"), ("pope", "POPE"), ("failure_mining", "FM")]
+
+    for dataset_key, run_prefix in dataset_specs:
+        runs.append(make_run(
+            dataset_key,
+            f"{run_prefix}-DENSE-576",
+            "Dense / Vanilla",
+            "dense",
+            576,
+            f"{dataset_key}_dense_576",
+        ))
+
+        for budget in [128, 64]:
+            for run_name, method_label, selection_method, stem in [
+                ("SPARSE-ORIG", "SparseVLM-Original", "topk", "sparsevlm_original"),
+                ("OURS", "Ours", "mmr", "ours"),
+                ("THRESHOLD-FIXED", "Threshold-Fixed-k", "threshold_fixed", "threshold_fixed"),
+            ]:
+                runs.append(make_run(
+                    dataset_key,
+                    f"{run_prefix}-{run_name}-{budget}",
+                    method_label,
+                    selection_method,
+                    budget,
+                    f"{dataset_key}_{stem}_{budget}",
+                ))
+
+        for tau in [0.80, 0.85, 0.90]:
+            tau_suffix = f"tau{int(round(tau * 100)):03d}"
+            runs.append(make_run(
+                dataset_key,
+                f"{run_prefix}-THRESHOLD-ADAPT-{int(round(tau * 100)):03d}",
+                "Threshold-Adaptive",
+                "threshold_adaptive",
+                64,
+                f"{dataset_key}_threshold_adaptive_{tau_suffix}",
+                threshold_tau=tau,
+            ))
+
+    return runs
+
+
+PROTOCOL_SMOKE_RUNS = build_protocol_smoke_runs()
+
+
+# ----- Metrics -----
+
+def normalize_answer(text):
+    text = str(text).strip().lower()
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def exact_match(prediction, target):
+    pred = normalize_answer(prediction)
+    gold = normalize_answer(target)
+    if not pred or not gold:
+        return False
+    return pred == gold or gold in pred.split()
+
+
+def pope_label_from_answer(text):
+    words = normalize_answer(text).split()
+    if "no" in words or "not" in words:
+        return "no"
+    return "yes"
+
+
+def safe_div(numerator, denominator):
+    return numerator / denominator if denominator else 0.0
+
+
+def compute_pope_metrics(predictions):
+    y_true = [1 if normalize_answer(item["ground_truth"]) == "yes" else 0 for item in predictions]
+    y_pred = [1 if pope_label_from_answer(item["text"]) == "yes" else 0 for item in predictions]
+
+    tp = sum(1 for pred, gold in zip(y_pred, y_true) if pred == 1 and gold == 1)
+    tn = sum(1 for pred, gold in zip(y_pred, y_true) if pred == 0 and gold == 0)
+    fp = sum(1 for pred, gold in zip(y_pred, y_true) if pred == 1 and gold == 0)
+    fn = sum(1 for pred, gold in zip(y_pred, y_true) if pred == 0 and gold == 1)
+
+    precision = safe_div(tp, tp + fp)
+    recall = safe_div(tp, tp + fn)
+    f1 = safe_div(2 * precision * recall, precision + recall)
+    accuracy = safe_div(tp + tn, len(y_true))
+    yes_ratio = safe_div(sum(y_pred), len(y_pred))
+    return {
+        "accuracy": accuracy,
+        "f1": f1,
+        "precision": precision,
+        "recall": recall,
+        "yes_ratio": yes_ratio,
+        "tp": tp,
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+    }
+
+
+def compute_exact_metrics(predictions):
+    correct = sum(1 for item in predictions if exact_match(item["text"], item["ground_truth"]))
+    total = len(predictions)
+    return {"accuracy": safe_div(correct, total), "correct": correct, "total": total}
+
+
+def classify_failure(prediction, target):
+    pred = normalize_answer(prediction)
+    gold = normalize_answer(target)
+    if exact_match(pred, gold):
+        return "correct"
+    if gold in {"yes", "no"}:
+        return "binary_mismatch"
+    if not pred:
+        return "empty_answer"
+    return "open_answer_mismatch"
+
+
+# ----- Sample selection -----
+
+def read_failure_mining_rows():
+    with open(CSV_PATH, "r", encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    for idx, row in enumerate(rows, start=1):
+        row["question_id"] = row.get("case_id") or f"sample_{idx:04d}"
+    return rows
+
+
+def build_sample_sets():
+    rows = read_failure_mining_rows()
+    gqa_rows = [row for row in rows if row.get("dataset", "").lower().startswith("gqa")]
+    if len(gqa_rows) < SMOKE_SAMPLE_COUNT:
+        gqa_rows = rows
+
+    yes_no_rows = [
+        row for row in rows
+        if normalize_answer(row.get("ground_truth", "")) in {"yes", "no"}
+    ]
+    if len(yes_no_rows) < SMOKE_SAMPLE_COUNT:
+        raise RuntimeError("Need at least SMOKE_SAMPLE_COUNT yes/no rows to exercise POPE metrics.")
+
+    return {
+        "gqa": gqa_rows[:SMOKE_SAMPLE_COUNT],
+        "failure_mining": rows[:SMOKE_SAMPLE_COUNT],
+        "pope": yes_no_rows[:SMOKE_SAMPLE_COUNT],
+    }
+
+
+SAMPLE_SETS = build_sample_sets()
+print("Smoke sample counts:", {key: len(value) for key, value in SAMPLE_SETS.items()})
+print("Protocol run count:", len(PROTOCOL_SMOKE_RUNS))
+
+
+# ----- Inference -----
 
 def build_prompt(question):
     conv = conv_templates[CONV_MODE].copy()
@@ -240,359 +349,426 @@ def build_prompt(question):
 
 
 def prepare_image_tensor(image):
-    image_sizes = [image.size]
     images_tensor = process_images([image], image_processor, model.config)
     if isinstance(images_tensor, list):
-        images_tensor = [
+        return [
             image_tensor.to(model.device, dtype=torch.float16)
             for image_tensor in images_tensor
         ]
-    else:
-        images_tensor = images_tensor.to(model.device, dtype=torch.float16)
-    return images_tensor, image_sizes
+    return images_tensor.to(model.device, dtype=torch.float16)
 
 
-def sparse_answer_and_trace(image_path, question):
-    prompt = build_prompt(question)
+def run_generation(row, run):
+    image_path = Path(REPO_ROOT) / row["image_path"]
     image = Image.open(image_path).convert("RGB")
-    images_tensor, image_sizes = prepare_image_tensor(image)
+    prompt = build_prompt(row["question"])
     input_ids = tokenizer_image_token(
         prompt,
         tokenizer,
         IMAGE_TOKEN_INDEX,
         return_tensors="pt",
     ).unsqueeze(0).to(model.device)
+    images_tensor = prepare_image_tensor(image)
 
     sparse_core = model.get_model()
-    sparse_core.capture_visual_tokens = True
-    sparse_core.visual_token_trace = []
+    original_pruning_loc = list(getattr(sparse_core, "pruning_loc", SPARSE_PRUNING_LOC))
+
+    if run.selection_method == "dense":
+        sparse_core.pruning_loc = []
+        sparse_core.last_sparse_metadata = {}
+        generate_selection_method = "topk"
+    else:
+        sparse_core.pruning_loc = SPARSE_PRUNING_LOC
+        sparse_core.last_sparse_metadata = {}
+        generate_selection_method = run.selection_method
+
     try:
+        generation_kwargs = {
+            "do_sample": TEMPERATURE > 0,
+            "num_beams": NUM_BEAMS,
+            "max_new_tokens": MAX_NEW_TOKENS,
+            "use_cache": True,
+        }
+        if TEMPERATURE > 0:
+            generation_kwargs["temperature"] = TEMPERATURE
+
         with torch.inference_mode():
             output_ids = model.generate(
                 inputs=input_ids,
                 images=images_tensor,
-                image_sizes=image_sizes,
-                retained_tokens=RETAINED_TOKENS,
-                do_sample=False,
-                num_beams=1,
-                max_new_tokens=MAX_NEW_TOKENS,
-                use_cache=True,
+                image_sizes=[image.size],
+                retained_tokens=run.retained_tokens,
+                selection_method=generate_selection_method,
+                threshold_tau=run.threshold_tau,
+                candidate_pool_factor=CANDIDATE_POOL_FACTOR,
+                **generation_kwargs,
             )
-        trace = [dict(item) for item in sparse_core.visual_token_trace]
+        answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
+        metadata = deepcopy(getattr(sparse_core, "last_sparse_metadata", {}))
     finally:
-        sparse_core.capture_visual_tokens = False
+        sparse_core.pruning_loc = original_pruning_loc
 
-    answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
-    return answer, trace
-
-
-def clip_input_view(image):
-    crop_size = image_processor.crop_size
-    if isinstance(crop_size, dict):
-        side = int(crop_size.get("height", crop_size.get("width", 336)))
+    if run.selection_method == "dense":
+        metadata = {
+            "selection_method": "dense",
+            "retained_tokens": 576,
+            "retained_token_count": 576,
+            "layer_token_stats": [],
+        }
     else:
-        side = int(crop_size)
+        metadata.setdefault("selection_method", run.selection_method)
+        metadata.setdefault("retained_tokens", run.retained_tokens)
+        metadata.setdefault("threshold_tau", run.threshold_tau)
+        metadata.setdefault("candidate_pool_factor", CANDIDATE_POOL_FACTOR)
 
-    if getattr(model.config, "image_aspect_ratio", None) == "pad":
-        background = tuple(int(x * 255) for x in image_processor.image_mean)
-        image = expand2square(image, background)
-        return image.resize((side, side), Image.Resampling.BICUBIC)
-
-    return ImageOps.fit(
-        image,
-        (side, side),
-        method=Image.Resampling.BICUBIC,
-        centering=(0.5, 0.5),
-    )
+    return answer, metadata
 
 
-def overlay_selected_tokens(image, selected_indices, grid_size, fade=0.72):
-    base = clip_input_view(image).convert("RGB")
-    white = Image.new("RGB", base.size, "white")
-    canvas = Image.blend(base, white, fade).convert("RGBA")
-    source = base.convert("RGBA")
-    highlight = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(highlight, "RGBA")
+# ----- Validation and output -----
 
-    selected = {
-        int(idx)
-        for idx in selected_indices
-        if 0 <= int(idx) < grid_size * grid_size
+def validate_metadata(run, metadata, sample_id):
+    problems = []
+    if metadata.get("selection_method") != run.selection_method:
+        problems.append(f"selection_method={metadata.get('selection_method')} expected {run.selection_method}")
+
+    if int(metadata.get("retained_tokens", -1)) != int(run.retained_tokens):
+        problems.append(f"retained_tokens={metadata.get('retained_tokens')} expected {run.retained_tokens}")
+
+    if run.selection_method == "dense":
+        if metadata.get("retained_token_count") != 576:
+            problems.append("dense retained_token_count should be 576")
+        return problems
+
+    layer_stats = metadata.get("layer_token_stats")
+    if not isinstance(layer_stats, list) or not layer_stats:
+        problems.append("missing layer_token_stats")
+        return problems
+
+    if metadata.get("retained_token_count") is None:
+        problems.append("missing retained_token_count")
+
+    if not isinstance(metadata.get("selected_original_token_indices"), list):
+        problems.append("missing selected_original_token_indices")
+
+    for layer in layer_stats:
+        if layer.get("selection_method") != run.selection_method:
+            problems.append(f"layer {layer.get('layer_idx')} used {layer.get('selection_method')}")
+        selected_count = int(layer.get("selected_count", -1))
+        per_layer_budget = int(layer.get("per_layer_budget", -1))
+        if selected_count < 0 or per_layer_budget < 0:
+            problems.append(f"layer {layer.get('layer_idx')} has invalid selected_count or budget")
+        if run.selection_method == "threshold_fixed" and selected_count != per_layer_budget:
+            problems.append(f"threshold_fixed layer {layer.get('layer_idx')} selected {selected_count}, budget {per_layer_budget}")
+        if run.selection_method == "threshold_adaptive" and "threshold_tau" not in layer:
+            problems.append(f"threshold_adaptive layer {layer.get('layer_idx')} missing threshold_tau")
+
+    return [f"{sample_id}: {problem}" for problem in problems]
+
+
+def prediction_record(row, run, answer, metadata, elapsed):
+    return {
+        "question_id": row["question_id"],
+        "prompt": row["question"],
+        "text": answer,
+        "answer_id": shortuuid.uuid(),
+        "model_id": MODEL_PATH,
+        "dataset": row.get("dataset", run.dataset_key),
+        "image_path": row["image_path"],
+        "ground_truth": row.get("ground_truth", ""),
+        "question_type": row.get("question_type", ""),
+        "run_id": run.run_id,
+        "metadata": metadata,
+        "inference_seconds": elapsed,
     }
-    width, height = base.size
-
-    for idx in sorted(selected):
-        row, col = divmod(idx, grid_size)
-        left = round(col * width / grid_size)
-        top = round(row * height / grid_size)
-        right = round((col + 1) * width / grid_size)
-        bottom = round((row + 1) * height / grid_size)
-        box = (left, top, right, bottom)
-        canvas.paste(source.crop(box), box)
-        draw.rectangle(box, fill=(220, 0, 0, 55), outline=(185, 0, 0, 235), width=2)
-
-    return Image.alpha_composite(canvas, highlight).convert("RGB")
 
 
-def clip_input_with_grid(image, grid_size):
-    base = clip_input_view(image).convert("RGB")
-    draw = ImageDraw.Draw(base, "RGBA")
-    width, height = base.size
-    for i in range(1, grid_size):
-        x = round(i * width / grid_size)
-        y = round(i * height / grid_size)
-        draw.line((x, 0, x, height), fill=(0, 0, 0, 45), width=1)
-        draw.line((0, y, width, y), fill=(0, 0, 0, 45), width=1)
-    return base
+def write_jsonl(path, records):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def heat_color(value):
-    value = max(0.0, min(1.0, float(value)))
-    if value < 0.5:
-        t = value / 0.5
-        r = int(255 * t)
-        g = int(190 * t)
-        b = 0
-    else:
-        t = (value - 0.5) / 0.5
-        r = 255
-        g = int(190 * (1 - t))
-        b = 0
-    return r, g, b
+def write_csv(path, rows, fieldnames):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
-def overlay_relevance_heatmap(image, score_pairs, grid_size, alpha=150):
-    base = clip_input_view(image).convert("RGBA")
-    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay, "RGBA")
+def metric_rows_for_run(run, predictions):
+    if run.dataset_key == "pope":
+        metrics = compute_pope_metrics(predictions)
+        row = {
+            "run_id": run.run_id,
+            "dataset": "POPE-smoke",
+            "method": run.method_label,
+            "token_setting": run.retained_tokens,
+            "threshold_tau": run.threshold_tau if run.selection_method == "threshold_adaptive" else "",
+            "sample_count": len(predictions),
+            "accuracy": metrics["accuracy"],
+            "f1": metrics["f1"],
+            "precision": metrics["precision"],
+            "recall": metrics["recall"],
+            "yes_ratio": metrics["yes_ratio"],
+            "tp": metrics["tp"],
+            "tn": metrics["tn"],
+            "fp": metrics["fp"],
+            "fn": metrics["fn"],
+        }
+        return [row]
 
-    scores = {
-        int(item["index"]): float(item["score"])
-        for item in score_pairs
-        if 0 <= int(item["index"]) < grid_size * grid_size
-    }
-    if not scores:
-        return base.convert("RGB")
+    metrics = compute_exact_metrics(predictions)
+    rows = [{
+        "run_id": run.run_id,
+        "dataset": f"{run.dataset_key}-smoke",
+        "method": run.method_label,
+        "token_setting": run.retained_tokens,
+        "threshold_tau": run.threshold_tau if run.selection_method == "threshold_adaptive" else "",
+        "sample_count": len(predictions),
+        "accuracy": metrics["accuracy"],
+        "correct": metrics["correct"],
+        "total": metrics["total"],
+    }]
 
-    min_score = min(scores.values())
-    max_score = max(scores.values())
-    denom = max(max_score - min_score, 1e-8)
-    width, height = base.size
+    if run.dataset_key == "failure_mining":
+        counts = {}
+        for item in predictions:
+            label = classify_failure(item["text"], item["ground_truth"])
+            counts[label] = counts.get(label, 0) + 1
+        rows[0].update({
+            "correct_count": counts.get("correct", 0),
+            "binary_mismatch_count": counts.get("binary_mismatch", 0),
+            "open_answer_mismatch_count": counts.get("open_answer_mismatch", 0),
+            "empty_answer_count": counts.get("empty_answer", 0),
+        })
 
-    for idx, score in scores.items():
-        row, col = divmod(idx, grid_size)
-        left = round(col * width / grid_size)
-        top = round(row * height / grid_size)
-        right = round((col + 1) * width / grid_size)
-        bottom = round((row + 1) * height / grid_size)
-        value = (score - min_score) / denom
-        draw.rectangle((left, top, right, bottom), fill=(*heat_color(value), alpha))
-
-    return Image.alpha_composite(base, overlay).convert("RGB")
+    return rows
 
 
-def make_interpretability_panel(original, clip_grid, heatmap, selected, heatmap_layer, selected_layer):
-    panels = [
-        ("Original image", original.copy().convert("RGB")),
-        ("CLIP input grid", clip_grid.convert("RGB")),
-        (f"Layer {heatmap_layer} relevance", heatmap.convert("RGB")),
-        (f"Layer {selected_layer} surviving patches", selected.convert("RGB")),
+def sparse_stats_for_predictions(run, predictions):
+    counts = [
+        int(item["metadata"]["retained_token_count"])
+        for item in predictions
+        if item.get("metadata", {}).get("retained_token_count") is not None
     ]
-
-    tile_w = 280
-    header_h = 34
-    margin = 12
-    gap = 14
-    font = ImageFont.load_default()
-    tiles = []
-
-    for title, panel in panels:
-        panel.thumbnail((tile_w, tile_w), Image.Resampling.LANCZOS)
-        tile = Image.new("RGB", (tile_w, tile_w + header_h), "white")
-        draw = ImageDraw.Draw(tile)
-        draw.text((6, 10), title, fill=(0, 0, 0), font=font)
-        tile.paste(panel, ((tile_w - panel.width) // 2, header_h + (tile_w - panel.height) // 2))
-        tiles.append(tile)
-
-    canvas = Image.new("RGB", (len(tiles) * tile_w + (len(tiles) - 1) * gap + 2 * margin, tile_w + header_h + 2 * margin), "white")
-    x = margin
-    for tile in tiles:
-        canvas.paste(tile, (x, margin))
-        x += tile_w + gap
-    return canvas
+    if not counts:
+        return {}
+    return {
+        "selection_method": run.selection_method,
+        "retained_tokens": run.retained_tokens,
+        "threshold_tau": run.threshold_tau,
+        "candidate_pool_factor": CANDIDATE_POOL_FACTOR,
+        "sample_count": len(counts),
+        "retained_token_count": counts,
+        "average_retained_tokens": sum(counts) / len(counts),
+        "min_retained_tokens": min(counts),
+        "max_retained_tokens": max(counts),
+    }
 
 
-def choose_trace(trace, layer):
-    by_layer = {int(item["layer"]): item for item in trace}
-    if layer in by_layer:
-        return by_layer[layer]
-    if trace:
-        return trace[-1]
-    return {"layer": None, "selected_original_indices": [], "original_token_scores": []}
+def write_run_metric_csv(run, predictions):
+    output_path = RESULTS_ROOT / run.output_relpath
+    rows = metric_rows_for_run(run, predictions)
+    fieldnames = sorted({key for row in rows for key in row.keys()})
+    write_csv(output_path, rows, fieldnames)
+    return output_path, rows[0]
 
 
-def patch_grid_size():
-    image_shape = getattr(model, "image_shape", 576)
-    return int(round(math.sqrt(int(image_shape))))
+def write_adaptive_sparse_stats(run, predictions):
+    if run.selection_method != "threshold_adaptive":
+        return None
+    stats = sparse_stats_for_predictions(run, predictions)
+    if not stats:
+        raise RuntimeError(f"{run.run_id}: no adaptive retained-token stats were captured")
+    stats_path = (RESULTS_ROOT / run.prediction_relpath).with_name(
+        Path(run.prediction_relpath).stem + "_sparse_stats.json"
+    )
+    with open(stats_path, "w", encoding="utf-8") as f:
+        json.dump(stats, f, indent=2)
+    return stats_path
 
 
-def save_overlay(row_num, case_id, layer, image, selected_indices, grid_size, output_dir):
-    overlay = overlay_selected_tokens(image, selected_indices, grid_size)
-    path = output_dir / f"{row_num:03d}_{case_id}_layer{layer}_selected_tokens.png"
-    overlay.save(path)
-    return overlay, path
+# ----- Smoke runner -----
 
+def run_one_protocol_smoke(run):
+    predictions = []
+    metadata_errors = []
+    log_path = LOG_DIR / f"{run.run_id}.jsonl"
+    prediction_path = RESULTS_ROOT / run.prediction_relpath
+    samples = SAMPLE_SETS[run.dataset_key]
 
-def save_heatmap(row_num, case_id, layer, image, score_pairs, grid_size, output_dir):
-    heatmap = overlay_relevance_heatmap(image, score_pairs, grid_size)
-    path = output_dir / f"{row_num:03d}_{case_id}_layer{layer}_relevance_heatmap.png"
-    heatmap.save(path)
-    return heatmap, path
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        log_file.write(json.dumps({
+            "event": "run_start",
+            "run_id": run.run_id,
+            "selection_method": run.selection_method,
+            "retained_tokens": run.retained_tokens,
+            "threshold_tau": run.threshold_tau,
+            "sample_count": len(samples),
+            "time": time.time(),
+        }) + "\n")
 
-
-def run_sparse_interpretability_visualization():
-    output_dir = Path(OUTPUT_DIR)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    with open(CSV_PATH, "r", encoding="utf-8", newline="") as f:
-        rows = list(csv.DictReader(f))
-
-    if ROW_FILTER_1_INDEXED is None:
-        selected_rows = list(enumerate(rows, start=1))
-        row_label = "all rows"
-    else:
-        bad_rows = [row_num for row_num in ROW_FILTER_1_INDEXED if row_num < 1 or row_num > len(rows)]
-        if bad_rows:
-            raise ValueError(f"ROW_FILTER_1_INDEXED has out-of-range rows: {bad_rows}")
-        selected_rows = [(row_num, rows[row_num - 1]) for row_num in ROW_FILTER_1_INDEXED]
-        row_label = str(ROW_FILTER_1_INDEXED)
-
-    grid_size = patch_grid_size()
-
-    print("Rows:", row_label)
-    print("Total samples:", len(selected_rows))
-    print("Ranking method:", RANKING_METHOD)
-    print("Patch grid:", grid_size, "x", grid_size)
-    print("Output dir:", output_dir)
-    print()
-
-    with open(TRACE_JSONL, "w", encoding="utf-8") as trace_file:
-        for row_num, row in selected_rows:
-            image_path = Path(REPO_ROOT) / row["image_path"]
-            image = Image.open(image_path).convert("RGB")
-            case_id = row["case_id"]
-            question = row["question"]
-            ground_truth = row.get("ground_truth", "")
-            question_type = row.get("question_type", "")
-
-            display(Markdown(f"### Row {row_num}: `{case_id}` | `{question_type}`"))
-            print("Question:", question)
-            print("Ground truth:", ground_truth)
-
+        for sample_idx, row in enumerate(samples, start=1):
             start = time.time()
-            answer, trace = sparse_answer_and_trace(image_path, question)
+            answer, metadata = run_generation(row, run)
             elapsed = time.time() - start
-            if not trace:
-                raise RuntimeError(f"No sparse trace captured for row {row_num} ({case_id}).")
+            record = prediction_record(row, run, answer, metadata, elapsed)
+            predictions.append(record)
+            metadata_errors.extend(validate_metadata(run, metadata, row["question_id"]))
 
-            heatmap_trace = choose_trace(trace, HEATMAP_LAYER)
-            final_trace = choose_trace(trace, FINAL_SELECTED_LAYER)
-            heatmap_layer = heatmap_trace["layer"]
-            final_layer = final_trace["layer"]
-            layer_paths = {}
-            final_overlay = None
-
-            layers_to_save = trace if SAVE_ALL_LAYERS else [final_trace]
-            for item in layers_to_save:
-                layer = int(item["layer"])
-                overlay, layer_path = save_overlay(
-                    row_num,
-                    case_id,
-                    layer,
-                    image,
-                    item["selected_original_indices"],
-                    grid_size,
-                    output_dir,
-                )
-                layer_paths[str(layer)] = str(layer_path)
-                if layer == final_layer:
-                    final_overlay = overlay
-
-            if final_overlay is None:
-                final_overlay, layer_path = save_overlay(
-                    row_num,
-                    case_id,
-                    final_layer,
-                    image,
-                    final_trace["selected_original_indices"],
-                    grid_size,
-                    output_dir,
-                )
-                layer_paths[str(final_layer)] = str(layer_path)
-
-            heatmap, heatmap_path = save_heatmap(
-                row_num,
-                case_id,
-                heatmap_layer,
-                image,
-                heatmap_trace.get("original_token_scores", []),
-                grid_size,
-                output_dir,
-            )
-            clip_grid = clip_input_with_grid(image, grid_size)
-            panel = make_interpretability_panel(
-                image,
-                clip_grid,
-                heatmap,
-                final_overlay,
-                heatmap_layer,
-                final_layer,
-            )
-            panel_path = output_dir / f"{row_num:03d}_{case_id}_interpretability_panel.png"
-            panel.save(panel_path)
-
-            display(DisplayImage(filename=str(panel_path), width=1200))
-            if SHOW_ALL_LAYERS:
-                for layer_path in layer_paths.values():
-                    display(DisplayImage(filename=layer_path, width=420))
-
-            print("Sparse answer:", answer)
-            print("Heatmap layer:", heatmap_layer)
-            print("Final selected layer:", final_layer)
-            print("Final selected original patches:", len(final_trace["selected_original_indices"]))
-            print("Trace layers:", [item["layer"] for item in trace])
-            print("Seconds:", round(elapsed, 2))
-            print("-" * 100, flush=True)
-
-            trace_file.write(json.dumps({
-                "row": row_num,
-                "case_id": case_id,
-                "dataset": row["dataset"],
-                "image_path": row["image_path"],
-                "question": question,
-                "ground_truth": ground_truth,
-                "question_type": question_type,
-                "retained_tokens": RETAINED_TOKENS,
-                "ranking_method": RANKING_METHOD,
-                "sparse_answer": answer,
-                "trace": trace,
-                "visualization": str(panel_path),
-                "heatmap_visualization": str(heatmap_path),
-                "layer_visualizations": layer_paths,
-                "inference_seconds": elapsed,
-            }, ensure_ascii=False) + "\n")
-            trace_file.flush()
+            log_file.write(json.dumps({
+                "event": "sample_done",
+                "run_id": run.run_id,
+                "sample_index": sample_idx,
+                "question_id": row["question_id"],
+                "seconds": elapsed,
+                "retained_token_count": metadata.get("retained_token_count"),
+            }) + "\n")
+            log_file.flush()
             torch.cuda.empty_cache()
 
-    print("Done.")
-    print("Trace JSONL:", TRACE_JSONL)
+        log_file.write(json.dumps({
+            "event": "run_end",
+            "run_id": run.run_id,
+            "sample_count": len(predictions),
+            "metadata_error_count": len(metadata_errors),
+            "time": time.time(),
+        }) + "\n")
 
+    if metadata_errors:
+        raise RuntimeError(f"{run.run_id} metadata validation failed:\n" + "\n".join(metadata_errors[:20]))
+
+    write_jsonl(prediction_path, predictions)
+    metric_path, metric_row = write_run_metric_csv(run, predictions)
+    adaptive_stats_path = write_adaptive_sparse_stats(run, predictions)
+
+    manifest_record = {
+        "run_id": run.run_id,
+        "dataset": run.dataset_key,
+        "method": run.method_label,
+        "selection_method": run.selection_method,
+        "retained_tokens": run.retained_tokens,
+        "threshold_tau": run.threshold_tau,
+        "sample_count": len(predictions),
+        "prediction_file": str(prediction_path),
+        "metric_file": str(metric_path),
+        "log_file": str(log_path),
+        "adaptive_sparse_stats_file": str(adaptive_stats_path) if adaptive_stats_path else "",
+        "metric": metric_row,
+        "status": "ok",
+    }
+    return manifest_record
+
+
+def write_summary_tables(manifest):
+    summary_rows = []
+    for item in manifest:
+        stats = {}
+        pred_path = Path(item["prediction_file"])
+        predictions = [json.loads(line) for line in open(pred_path, "r", encoding="utf-8")]
+        if item["selection_method"] != "dense":
+            stats = sparse_stats_for_predictions(
+                SmokeRun(
+                    run_id=item["run_id"],
+                    dataset_key=item["dataset"],
+                    method_label=item["method"],
+                    selection_method=item["selection_method"],
+                    retained_tokens=item["retained_tokens"],
+                    threshold_tau=item["threshold_tau"],
+                    prediction_relpath="",
+                    output_relpath="",
+                ),
+                predictions,
+            )
+        metric = item["metric"]
+        summary_rows.append({
+            "run_id": item["run_id"],
+            "dataset": item["dataset"],
+            "method": item["method"],
+            "selection_method": item["selection_method"],
+            "token_setting": item["retained_tokens"],
+            "threshold_tau": item["threshold_tau"] if item["selection_method"] == "threshold_adaptive" else "",
+            "sample_count": item["sample_count"],
+            "accuracy": metric.get("accuracy", ""),
+            "f1": metric.get("f1", ""),
+            "average_retained_tokens": stats.get("average_retained_tokens", ""),
+            "min_retained_tokens": stats.get("min_retained_tokens", ""),
+            "max_retained_tokens": stats.get("max_retained_tokens", ""),
+            "prediction_file": item["prediction_file"],
+            "metric_file": item["metric_file"],
+            "log_file": item["log_file"],
+            "status": item["status"],
+        })
+
+    fieldnames = [
+        "run_id", "dataset", "method", "selection_method", "token_setting",
+        "threshold_tau", "sample_count", "accuracy", "f1",
+        "average_retained_tokens", "min_retained_tokens", "max_retained_tokens",
+        "prediction_file", "metric_file", "log_file", "status",
+    ]
+    write_csv(SUMMARY_DIR / "final_evaluation_table.csv", summary_rows, fieldnames)
+
+    write_csv(
+        SUMMARY_DIR / "gqa_summary.csv",
+        [row for row in summary_rows if row["dataset"] == "gqa" and row["selection_method"] != "threshold_adaptive"],
+        fieldnames,
+    )
+    write_csv(
+        SUMMARY_DIR / "pope_summary.csv",
+        [row for row in summary_rows if row["dataset"] == "pope" and row["selection_method"] != "threshold_adaptive"],
+        fieldnames,
+    )
+    write_csv(
+        SUMMARY_DIR / "failure_mining_summary.csv",
+        [row for row in summary_rows if row["dataset"] == "failure_mining" and row["selection_method"] != "threshold_adaptive"],
+        fieldnames,
+    )
+    write_csv(
+        SUMMARY_DIR / "adaptive_threshold_summary.csv",
+        [
+            row for row in summary_rows
+            if row["selection_method"] == "threshold_adaptive"
+            or row["run_id"].endswith("OURS-64")
+            or row["run_id"].endswith("OURS-128")
+        ],
+        fieldnames,
+    )
+
+    return summary_rows
+
+
+def run_protocol_smoke_test():
+    manifest = []
+    start = time.time()
+    for index, run in enumerate(PROTOCOL_SMOKE_RUNS, start=1):
+        print(f"[{index}/{len(PROTOCOL_SMOKE_RUNS)}] {run.run_id} ({run.selection_method}, retained={run.retained_tokens}, tau={run.threshold_tau})")
+        record = run_one_protocol_smoke(run)
+        manifest.append(record)
+        with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+        print("  ok:", record["prediction_file"])
+
+    summary_rows = write_summary_tables(manifest)
+    print()
+    print("Smoke protocol complete.")
+    print("Runs:", len(manifest))
+    print("Samples per dataset:", {key: len(value) for key, value in SAMPLE_SETS.items()})
+    print("Output root:", OUTPUT_ROOT)
+    print("Manifest:", MANIFEST_PATH)
+    print("Summary rows:", len(summary_rows))
+    print("Total minutes:", round((time.time() - start) / 60, 2))
+    return manifest
+```
+
+Cell 6: Load model
+```python
 
 disable_torch_init()
 torch.backends.cuda.matmul.allow_tf32 = True
 
 model_name = get_model_name_from_path(MODEL_PATH)
-
 load_start = time.time()
 tokenizer, model, image_processor, context_len = load_pretrained_model(
     MODEL_PATH,
@@ -608,12 +784,12 @@ model.eval()
 print("Loaded:", MODEL_PATH)
 print("Conversation mode:", CONV_MODE)
 print("Context length:", context_len)
-print("Retained tokens:", RETAINED_TOKENS)
-print("Ranking method:", RANKING_METHOD)
+print("Max new tokens:", MAX_NEW_TOKENS)
+print("Smoke sample count:", SMOKE_SAMPLE_COUNT)
 print("Load seconds:", round(time.time() - load_start, 2))
 ```
 
-Cell 6:
+Cell 7: Run smoke test
 ```python
-run_sparse_interpretability_visualization()
+manifest = run_protocol_smoke_test()
 ```
