@@ -309,3 +309,83 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
             1. in terms of token selection quality, we cannot compare: if the result is higher, we don't know if it is really better (because of it can keep more tokens or it is truly smarter). -> which is  changing the variable we are observing.
             2. if we still want to compare, then what we are effectively comparing is the accuracy and efficiency trade-off.
 
+- Successfully constructed the Threshold Filtering method.
+    + threshold filtering is needed because it is a simpler redundancy-aware baseline.
+        . it shows whether the improvement comes from the mmr-style selection, or merely from adding any redundancy reduction.
+    + threshold filtering mainly examines reducing redundancy, not performance improvement.
+    + it is a secondary baseline, not the proposed method.
+    + if threshold filtering outperforms our method, it means redundancy-aware token selection is valuable, but the simpler threshold rule may be a stronger implementation.
+        . the contribution becomes the analysis of redundancy-aware selection, not necessarily saying mmr is always best.
+    + if threshold filtering performs worse, the conclusion here is that reducing redundancy helps, but a hard similarity cutoff is too crude.
+        . ours is better because it balances relevance and redundancy.
+    + if threshold filtering is on par with ours, we can conclude that redundancy-aware selection is a meaningful direction, and mmr is one effective formulation
+        . thresholdfiltering will support that selected visual tokens should consider set diversity, not just independent relevance.
+    + threshold filtering helps answer: is the gain from explicitly reducing redundant visual tokens, or from something specific to the proposed mmr scoring formula.
+    + this method makes the evaluation more rigorous.
+
+- Detailed implementations:
+    + threshold filtering input:
+        . relation_vis_text: importance score per current visual token
+        . visual_states: current hidden states of visual tokens
+        . layer_idx
+        . retained_tokens
+        . threshold_tau
+        . candidate_pool_factor
+    + the importance score comes from the same sparsevlm attention-based relevance signal.
+    + relation_vis_text is the importance ranking used to choose the candidate pool, and then used to order tokens from most important to least important.
+    + the candidate pool is the top-2k visual tokens ranked by relation_vis_text
+    + we do not filter all visual tokens directly because many low-importance tokens are unlikely to be useful.
+        . filtering all tokens would increase compute and may keep irrelevant patches.
+    + k is the target per-layer visual-token budget for the current pruning layer.
+    + k is not literally 64 or 128, although it is the config number. k is the value after _get_keep_budget(...) function.
+        . k must be per-layer because sparsevlm does progressive pruning.
+        . for example, retained_tokens=64 maps to layer budgets such as [66, 30, 17], not 64 at every layer.
+    + cosine similarity is calculated on the current llama hidden states of the visual tokens, after image embeddings have been projected into the language model hidden space.
+    + a token is discarded if its cosine similarity to any already selected token is greater than the value of tau.
+    + we use the condition of similarity > tau, not >=, because tau is the strict rejection boundary.
+        . a token exactly at the threshold is still allowed, avoiding agressive rejection due to floating-point equality.
+    + when comparing visual tokens, we use max similarity to consider whether is should be discarded.
+        . if a token is highly similar to even one selected token, it is redundant with that selected evidence.
+- Details about Threshold-Fixed method:
+    + threshold-fixed must allow the same per-layer token budget as the current retained_tokens setting.
+        . threshold-adaptive does not backfill to the budget.
+    + threshold-fixed is used in the main fixed-budget benchmark comparison.
+    + it must use the same token setting with sparsevlm-original and our method in the same run because it is a controlled baseline. 
+        . if threshold-fixed used more of fewer tokens, accuracy differences could come from token count, instead of selection quality.
+    + if the run is retained_tokens=64, threshold-fixed is sharing the same per-layer budget schedule as ours-64 and sparsevlm-original-64, from sparse_token_dict[64].
+        . same as retained_tokens=128.
+    + if threshold filtering selects fewer tokens than the per-layer budget, the method fills the missing slots using backfill candidates.
+    + current backfill order:
+        . outside-pool tokens that pass the similarity threshold
+        . outside-pool token by importance
+        . remaining rejected or unselected tokens by importance
+    + outside-pool tokens are prioritised because they were not rejected as redundant inside the candidate pool.
+    + rejected tokens should be the final fallback because they already failed the redundancy test.
+        . adding them earlier weakens the purpose of threshold filtering.
+    + if backfilling contributes a lot of tokens, it suggests that the threshold is too strict, candidate pool is too small, or the image has many highly similar top-ranked visual tokens.
+    + if current visual token count is less than scheduled budget, the code uses _get_keep_budget(...) which caps the budget by the visual tokens count.
+    + the scorer bounds candidate size and selected count by the current visual-token count, so threshold-fixed will not over select or crash in edge cases as it can't request more tokens than exist.
+
+- Threshold-Adaptive:
+    + this method asks: what accuracy-token trade-off happens if redundancy filtering is allowed to decide the final retained count, instead of forcing a fixed budget?
+    + it should not be mixed directly into the main benchmark table as a fixed-budget method because it does not control token count.
+        . mixing it into the fixed-budget table would make the comparison unfair, as better accuracy might come from keeping more tokens.
+    + threshold-adaptive is not truly unlimited in tokens.
+        . it is still limited by the top-2k candidate pool, defined from the anchor retained_tokens setting.
+    + retained_tokens=64 is only an anchor, not the final token budget since it only defines k, which defines the top-2k candidate pool size. 
+    + threshold-adaptive does not include backfilling because it would turn it back to the fixed-budget method.
+    + if it retains very few tokens, the threshold is very strict for that image or content, or many top candidates are highly redundant.
+        . it will be judged by accuracy, which shows whether aggressive redundancy removal loses important evidence.
+    + if it keeps more token than ours-64 and grants higher accuracy, we can say that it improves accuracy with a higher retained-token cost. 
+        . the fair conclusion here is that if offers a different accuracy-efficiency trade-off.
+    + this method must report retained token count because without it, accuracy alone is misleading.
+    + additional metadata:
+        . average_retained_tokens: typical token cost
+        . min_retained_tokens: most aggressive compression case
+        . max_retained_tokens: worst-case token cost / upper retention behaviour
+
+- Tau:
+    + tau is the cosine-similarity threshold for deciding whether a candidate visual token is too redundant with already select tokens.
+    + if tau is lower (ex. 0.80), it filters more aggressively because tokens are rejected at a lower similarity level.
+    + if tau is higher (ex. 0.90), it filters more leniently.
+    + tau=0.85 is a middle / default setting, strict enough but not too aggressive.
