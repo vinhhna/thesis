@@ -1,6 +1,24 @@
-# SparseVLM Kaggle Smoke Test
+# SparseVLM Kaggle POPE Production Run
 
-These cells run a small 10-sample end-to-end smoke test for every algorithm and token setting in `evaluation_protocol_updated.md`. The output goes to `/kaggle/working/smoke_protocol_results`.
+These cells run POPE experiments from `evaluation_protocol_updated.md`.
+
+Kaggle may not handle many methods in one session, so this notebook runs a configurable subset. By default it runs one non-dense configuration on a balanced POPE subset: 500 adversarial, 500 popular, and 500 random samples. For later Kaggle sessions, change `RUN_IDS_TO_RUN` in Cell 4 to the next run ID.
+
+The output goes to `/kaggle/working/pope_main_results`. The final cell creates `/kaggle/working/pope_main_results_download.zip` so the results can be downloaded as one file from Kaggle.
+
+Dense has already been completed on the full POPE split, so the default order starts from SparseVLM-Original.
+
+Suggested run order:
+
+1. `POPE-SPARSE-ORIG-64`
+2. `POPE-OURS-64`
+3. `POPE-SPARSE-ORIG-128`
+4. `POPE-OURS-128`
+5. `POPE-THRESHOLD-FIXED-64`
+6. `POPE-THRESHOLD-FIXED-128`
+7. `POPE-THRESHOLD-ADAPT-080`
+8. `POPE-THRESHOLD-ADAPT-085`
+9. `POPE-THRESHOLD-ADAPT-090`
 
 Run Cell 2 only after a fresh clone or package reset, then restart the Kaggle kernel before continuing.
 
@@ -76,13 +94,55 @@ Cell 3: Runtime paths and environment
 %cd /kaggle/working/thesis/SparseVLMs
 
 import os
+import zipfile
 import sys
+from pathlib import Path
+
 import torch
+
+
+def find_kaggle_input_dir(required_child):
+    input_root = Path("/kaggle/input")
+    working_extract_root = Path("/kaggle/working/input_unzipped")
+
+    matches = sorted(path for path in input_root.rglob(required_child) if path.is_dir())
+    if matches:
+        return matches[0]
+
+    zip_matches = sorted(path for path in input_root.rglob(f"{required_child}.zip") if path.is_file())
+    if zip_matches:
+        zip_path = zip_matches[0]
+        target_root = working_extract_root / zip_path.stem
+        marker = target_root / f".{required_child.lower()}_unzip_complete"
+        if not marker.exists():
+            target_root.mkdir(parents=True, exist_ok=True)
+            print("Unzipping Kaggle input archive:", zip_path)
+            print("Unzip target:", target_root)
+            with zipfile.ZipFile(zip_path) as archive:
+                archive.extractall(target_root)
+            marker.write_text(str(zip_path), encoding="utf-8")
+
+        extracted_matches = sorted(
+            path for path in target_root.rglob(required_child)
+            if path.is_dir()
+        )
+        if extracted_matches:
+            return extracted_matches[0]
+
+    available = [str(path) for path in input_root.rglob("*") if path.is_dir() or path.suffix == ".zip"]
+    raise FileNotFoundError(
+        f"Could not find an extracted {required_child!r} folder or {required_child}.zip. "
+        f"Available input paths: {available[:80]}"
+    )
+
 
 REPO_ROOT = "/kaggle/working/thesis"
 LLAVA_ROOT = "/kaggle/working/thesis/SparseVLMs"
-CSV_PATH = f"{REPO_ROOT}/failure_mining_set.csv"
-OUTPUT_ROOT = "/kaggle/working/smoke_protocol_results"
+POPE_ROOT = find_kaggle_input_dir("POPE")
+POPE_ANNOTATIONS_DIR = POPE_ROOT / "annotations"
+POPE_IMAGE_DIR = POPE_ROOT / "val2014"
+OUTPUT_ROOT = "/kaggle/working/pope_main_results"
+DOWNLOAD_ZIP = "/kaggle/working/pope_main_results_download.zip"
 
 os.environ["USE_FLAX"] = "NO"
 os.environ["USE_JAX"] = "NO"
@@ -96,21 +156,18 @@ if LLAVA_ROOT not in sys.path:
 print("Torch:", torch.__version__)
 print("Torch CUDA build:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
+print("POPE root:", POPE_ROOT)
+print("POPE annotations:", POPE_ANNOTATIONS_DIR)
+print("POPE images:", POPE_IMAGE_DIR)
 print("Output root:", OUTPUT_ROOT)
 ```
 
-Cell 4: Selector unit tests
-```python
-# Fast selector unit tests. This catches dispatch, fixed-k backfill, and adaptive
-# threshold regressions before loading the 7B model.
-!python tests/test_sparse_selection.py
-```
-
-Cell 5: Smoke-test helpers
+Cell 4: POPE production helpers
 ```python
 import csv
 import json
 import re
+import sys
 import time
 from copy import deepcopy
 from dataclasses import dataclass
@@ -120,7 +177,31 @@ import shortuuid
 import torch
 from PIL import Image
 
-from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN
+
+def patch_sparse_private_import():
+    path = Path(LLAVA_ROOT) / "llava/model/language_model/modelling_sparse_llama.py"
+    text = path.read_text(encoding="utf-8")
+    anchor = "from .score import *"
+    replacement = "from .score import *\nfrom .score import _to_int"
+    if replacement not in text:
+        if anchor not in text:
+            raise RuntimeError(f"Patch anchor not found in {path}")
+        text = text.replace(anchor, replacement, 1)
+        path.write_text(text, encoding="utf-8")
+        print("Patched SparseVLM private score import:", path)
+    else:
+        print("SparseVLM private score import already patched.")
+
+    loaded_module = sys.modules.get("llava.model.language_model.modelling_sparse_llama")
+    if loaded_module is not None and not hasattr(loaded_module, "_to_int"):
+        from llava.model.language_model.score import _to_int as score_to_int
+        loaded_module._to_int = score_to_int
+        print("Patched already-loaded SparseVLM module with _to_int.")
+
+
+patch_sparse_private_import()
+
+from llava.constants import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
 from llava.conversation import conv_templates
 from llava.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
 from llava.model.builder import load_pretrained_model
@@ -131,19 +212,22 @@ from llava.utils import disable_torch_init
 
 MODEL_PATH = "liuhaotian/llava-v1.5-7b"
 CONV_MODE = "llava_v1"
-SMOKE_SAMPLE_COUNT = 10
 MAX_NEW_TOKENS = 32
 TEMPERATURE = 0.0
 NUM_BEAMS = 1
 CANDIDATE_POOL_FACTOR = 2
 DEFAULT_THRESHOLD_TAU = 0.85
 SPARSE_PRUNING_LOC = [2, 6, 15]
+POPE_SAMPLES_PER_CATEGORY = 500
 
+POPE_ROOT = Path(POPE_ROOT)
+POPE_ANNOTATIONS_DIR = Path(POPE_ANNOTATIONS_DIR)
+POPE_IMAGE_DIR = Path(POPE_IMAGE_DIR)
 OUTPUT_ROOT = Path(OUTPUT_ROOT)
 RESULTS_ROOT = OUTPUT_ROOT / "results"
 LOG_DIR = OUTPUT_ROOT / "logs"
 SUMMARY_DIR = RESULTS_ROOT / "summary"
-MANIFEST_PATH = OUTPUT_ROOT / "smoke_manifest.json"
+MANIFEST_PATH = OUTPUT_ROOT / "pope_main_manifest.json"
 
 for path in [RESULTS_ROOT, LOG_DIR, SUMMARY_DIR]:
     path.mkdir(parents=True, exist_ok=True)
@@ -152,83 +236,46 @@ for path in [RESULTS_ROOT, LOG_DIR, SUMMARY_DIR]:
 # ----- Run catalog -----
 
 @dataclass(frozen=True)
-class SmokeRun:
+class PopeRun:
     run_id: str
-    dataset_key: str
     method_label: str
     selection_method: str
     retained_tokens: int
-    threshold_tau: float
     prediction_relpath: str
     output_relpath: str
+    threshold_tau: float = DEFAULT_THRESHOLD_TAU
 
 
-def make_run(
-    dataset_key,
-    run_id,
-    method_label,
-    selection_method,
-    retained_tokens,
-    stem,
-    threshold_tau=DEFAULT_THRESHOLD_TAU,
-):
-    return SmokeRun(
-        run_id=run_id,
-        dataset_key=dataset_key,
-        method_label=method_label,
-        selection_method=selection_method,
-        retained_tokens=retained_tokens,
-        threshold_tau=float(threshold_tau),
-        prediction_relpath=f"{dataset_key}/predictions/{stem}.jsonl",
-        output_relpath=f"{dataset_key}/{stem}.csv",
-    )
+POPE_RUNS = [
+    PopeRun("POPE-DENSE-576", "Dense / Vanilla", "dense", 576, "pope/predictions/pope_dense_576.jsonl", "pope/pope_dense_576.csv"),
+    PopeRun("POPE-SPARSE-ORIG-128", "SparseVLM-Original", "topk", 128, "pope/predictions/pope_sparsevlm_original_128.jsonl", "pope/pope_sparsevlm_original_128.csv"),
+    PopeRun("POPE-SPARSE-ORIG-64", "SparseVLM-Original", "topk", 64, "pope/predictions/pope_sparsevlm_original_64.jsonl", "pope/pope_sparsevlm_original_64.csv"),
+    PopeRun("POPE-OURS-128", "Ours", "mmr", 128, "pope/predictions/pope_ours_128.jsonl", "pope/pope_ours_128.csv"),
+    PopeRun("POPE-OURS-64", "Ours", "mmr", 64, "pope/predictions/pope_ours_64.jsonl", "pope/pope_ours_64.csv"),
+    PopeRun("POPE-THRESHOLD-FIXED-128", "Threshold-Fixed-k", "threshold_fixed", 128, "pope/predictions/pope_threshold_fixed_128.jsonl", "pope/pope_threshold_fixed_128.csv"),
+    PopeRun("POPE-THRESHOLD-FIXED-64", "Threshold-Fixed-k", "threshold_fixed", 64, "pope/predictions/pope_threshold_fixed_64.jsonl", "pope/pope_threshold_fixed_64.csv"),
+    PopeRun("POPE-THRESHOLD-ADAPT-080", "Threshold-Adaptive", "threshold_adaptive", 64, "pope/predictions/pope_threshold_adaptive_tau080.jsonl", "pope/pope_threshold_adaptive_tau080.csv", threshold_tau=0.80),
+    PopeRun("POPE-THRESHOLD-ADAPT-085", "Threshold-Adaptive", "threshold_adaptive", 64, "pope/predictions/pope_threshold_adaptive_tau085.jsonl", "pope/pope_threshold_adaptive_tau085.csv", threshold_tau=0.85),
+    PopeRun("POPE-THRESHOLD-ADAPT-090", "Threshold-Adaptive", "threshold_adaptive", 64, "pope/predictions/pope_threshold_adaptive_tau090.jsonl", "pope/pope_threshold_adaptive_tau090.csv", threshold_tau=0.90),
+]
+
+# Change this list for each Kaggle session. Keep it short if Kaggle memory or
+# runtime is tight. Dense has already been completed, so the default next run is
+# the aggressive SparseVLM baseline.
+RUN_IDS_TO_RUN = [
+    "POPE-SPARSE-ORIG-64",
+]
 
 
-def build_protocol_smoke_runs():
-    runs = []
-    dataset_specs = [("gqa", "GQA"), ("pope", "POPE"), ("failure_mining", "FM")]
-
-    for dataset_key, run_prefix in dataset_specs:
-        runs.append(make_run(
-            dataset_key,
-            f"{run_prefix}-DENSE-576",
-            "Dense / Vanilla",
-            "dense",
-            576,
-            f"{dataset_key}_dense_576",
-        ))
-
-        for budget in [128, 64]:
-            for run_name, method_label, selection_method, stem in [
-                ("SPARSE-ORIG", "SparseVLM-Original", "topk", "sparsevlm_original"),
-                ("OURS", "Ours", "mmr", "ours"),
-                ("THRESHOLD-FIXED", "Threshold-Fixed-k", "threshold_fixed", "threshold_fixed"),
-            ]:
-                runs.append(make_run(
-                    dataset_key,
-                    f"{run_prefix}-{run_name}-{budget}",
-                    method_label,
-                    selection_method,
-                    budget,
-                    f"{dataset_key}_{stem}_{budget}",
-                ))
-
-        for tau in [0.80, 0.85, 0.90]:
-            tau_suffix = f"tau{int(round(tau * 100)):03d}"
-            runs.append(make_run(
-                dataset_key,
-                f"{run_prefix}-THRESHOLD-ADAPT-{int(round(tau * 100)):03d}",
-                "Threshold-Adaptive",
-                "threshold_adaptive",
-                64,
-                f"{dataset_key}_threshold_adaptive_{tau_suffix}",
-                threshold_tau=tau,
-            ))
-
-    return runs
+def selected_pope_runs():
+    run_by_id = {run.run_id: run for run in POPE_RUNS}
+    missing = [run_id for run_id in RUN_IDS_TO_RUN if run_id not in run_by_id]
+    if missing:
+        raise ValueError(f"Unknown RUN_IDS_TO_RUN entries: {missing}")
+    return [run_by_id[run_id] for run_id in RUN_IDS_TO_RUN]
 
 
-PROTOCOL_SMOKE_RUNS = build_protocol_smoke_runs()
+SELECTED_POPE_RUNS = selected_pope_runs()
 
 
 # ----- Metrics -----
@@ -238,14 +285,6 @@ def normalize_answer(text):
     text = re.sub(r"[^a-z0-9 ]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
-
-
-def exact_match(prediction, target):
-    pred = normalize_answer(prediction)
-    gold = normalize_answer(target)
-    if not pred or not gold:
-        return False
-    return pred == gold or gold in pred.split()
 
 
 def pope_label_from_answer(text):
@@ -286,57 +325,51 @@ def compute_pope_metrics(predictions):
     }
 
 
-def compute_exact_metrics(predictions):
-    correct = sum(1 for item in predictions if exact_match(item["text"], item["ground_truth"]))
-    total = len(predictions)
-    return {"accuracy": safe_div(correct, total), "correct": correct, "total": total}
+# ----- Dataset -----
 
-
-def classify_failure(prediction, target):
-    pred = normalize_answer(prediction)
-    gold = normalize_answer(target)
-    if exact_match(pred, gold):
-        return "correct"
-    if gold in {"yes", "no"}:
-        return "binary_mismatch"
-    if not pred:
-        return "empty_answer"
-    return "open_answer_mismatch"
-
-
-# ----- Sample selection -----
-
-def read_failure_mining_rows():
-    with open(CSV_PATH, "r", encoding="utf-8", newline="") as f:
-        rows = list(csv.DictReader(f))
-    for idx, row in enumerate(rows, start=1):
-        row["question_id"] = row.get("case_id") or f"sample_{idx:04d}"
+def read_jsonl(path):
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
     return rows
 
 
-def build_sample_sets():
-    rows = read_failure_mining_rows()
-    gqa_rows = [row for row in rows if row.get("dataset", "").lower().startswith("gqa")]
-    if len(gqa_rows) < SMOKE_SAMPLE_COUNT:
-        gqa_rows = rows
+def build_pope_samples():
+    samples = []
+    for category in ["adversarial", "popular", "random"]:
+        path = POPE_ANNOTATIONS_DIR / f"coco_pope_{category}.json"
+        rows = read_jsonl(path)
+        if POPE_SAMPLES_PER_CATEGORY is not None:
+            rows = rows[:POPE_SAMPLES_PER_CATEGORY]
+        for row in rows:
+            image_path = POPE_IMAGE_DIR / row["image"]
+            if not image_path.exists():
+                raise FileNotFoundError(f"Missing POPE image: {image_path}")
+            samples.append({
+                "question_id": f"{category}_{row['question_id']}",
+                "pope_question_id": row["question_id"],
+                "pope_category": category,
+                "question": row["text"],
+                "image": row["image"],
+                "image_path": str(image_path),
+                "ground_truth": row["label"],
+            })
+    return samples
 
-    yes_no_rows = [
-        row for row in rows
-        if normalize_answer(row.get("ground_truth", "")) in {"yes", "no"}
-    ]
-    if len(yes_no_rows) < SMOKE_SAMPLE_COUNT:
-        raise RuntimeError("Need at least SMOKE_SAMPLE_COUNT yes/no rows to exercise POPE metrics.")
 
-    return {
-        "gqa": gqa_rows[:SMOKE_SAMPLE_COUNT],
-        "failure_mining": rows[:SMOKE_SAMPLE_COUNT],
-        "pope": yes_no_rows[:SMOKE_SAMPLE_COUNT],
-    }
-
-
-SAMPLE_SETS = build_sample_sets()
-print("Smoke sample counts:", {key: len(value) for key, value in SAMPLE_SETS.items()})
-print("Protocol run count:", len(PROTOCOL_SMOKE_RUNS))
+POPE_SAMPLES = build_pope_samples()
+print("POPE sample count:", len(POPE_SAMPLES))
+print("POPE category counts:", {
+    category: sum(1 for item in POPE_SAMPLES if item["pope_category"] == category)
+    for category in ["adversarial", "popular", "random"]
+})
+print("POPE samples per category cap:", POPE_SAMPLES_PER_CATEGORY)
+print("All POPE configured run count:", len(POPE_RUNS))
+print("Selected POPE run count:", len(SELECTED_POPE_RUNS))
+print("Selected run IDs:", [run.run_id for run in SELECTED_POPE_RUNS])
 
 
 # ----- Inference -----
@@ -359,8 +392,7 @@ def prepare_image_tensor(image):
 
 
 def run_generation(row, run):
-    image_path = Path(REPO_ROOT) / row["image_path"]
-    image = Image.open(image_path).convert("RGB")
+    image = Image.open(row["image_path"]).convert("RGB")
     prompt = build_prompt(row["question"])
     input_ids = tokenizer_image_token(
         prompt,
@@ -468,14 +500,16 @@ def validate_metadata(run, metadata, sample_id):
 def prediction_record(row, run, answer, metadata, elapsed):
     return {
         "question_id": row["question_id"],
+        "pope_question_id": row["pope_question_id"],
+        "pope_category": row["pope_category"],
         "prompt": row["question"],
         "text": answer,
         "answer_id": shortuuid.uuid(),
         "model_id": MODEL_PATH,
-        "dataset": row.get("dataset", run.dataset_key),
+        "dataset": "pope",
+        "image": row["image"],
         "image_path": row["image_path"],
-        "ground_truth": row.get("ground_truth", ""),
-        "question_type": row.get("question_type", ""),
+        "ground_truth": row["ground_truth"],
         "run_id": run.run_id,
         "metadata": metadata,
         "inference_seconds": elapsed,
@@ -498,15 +532,25 @@ def write_csv(path, rows, fieldnames):
 
 
 def metric_rows_for_run(run, predictions):
-    if run.dataset_key == "pope":
-        metrics = compute_pope_metrics(predictions)
-        row = {
+    rows = []
+    for split_name in ["all", "adversarial", "popular", "random"]:
+        if split_name == "all":
+            split_predictions = predictions
+        else:
+            split_predictions = [
+                item for item in predictions
+                if item["pope_category"] == split_name
+            ]
+        metrics = compute_pope_metrics(split_predictions)
+        rows.append({
             "run_id": run.run_id,
-            "dataset": "POPE-smoke",
+            "dataset": "POPE",
+            "pope_split": split_name,
             "method": run.method_label,
+            "selection_method": run.selection_method,
             "token_setting": run.retained_tokens,
             "threshold_tau": run.threshold_tau if run.selection_method == "threshold_adaptive" else "",
-            "sample_count": len(predictions),
+            "sample_count": len(split_predictions),
             "accuracy": metrics["accuracy"],
             "f1": metrics["f1"],
             "precision": metrics["precision"],
@@ -516,34 +560,7 @@ def metric_rows_for_run(run, predictions):
             "tn": metrics["tn"],
             "fp": metrics["fp"],
             "fn": metrics["fn"],
-        }
-        return [row]
-
-    metrics = compute_exact_metrics(predictions)
-    rows = [{
-        "run_id": run.run_id,
-        "dataset": f"{run.dataset_key}-smoke",
-        "method": run.method_label,
-        "token_setting": run.retained_tokens,
-        "threshold_tau": run.threshold_tau if run.selection_method == "threshold_adaptive" else "",
-        "sample_count": len(predictions),
-        "accuracy": metrics["accuracy"],
-        "correct": metrics["correct"],
-        "total": metrics["total"],
-    }]
-
-    if run.dataset_key == "failure_mining":
-        counts = {}
-        for item in predictions:
-            label = classify_failure(item["text"], item["ground_truth"])
-            counts[label] = counts.get(label, 0) + 1
-        rows[0].update({
-            "correct_count": counts.get("correct", 0),
-            "binary_mismatch_count": counts.get("binary_mismatch", 0),
-            "open_answer_mismatch_count": counts.get("open_answer_mismatch", 0),
-            "empty_answer_count": counts.get("empty_answer", 0),
         })
-
     return rows
 
 
@@ -559,9 +576,7 @@ def sparse_stats_for_predictions(run, predictions):
         "selection_method": run.selection_method,
         "retained_tokens": run.retained_tokens,
         "threshold_tau": run.threshold_tau,
-        "candidate_pool_factor": CANDIDATE_POOL_FACTOR,
         "sample_count": len(counts),
-        "retained_token_count": counts,
         "average_retained_tokens": sum(counts) / len(counts),
         "min_retained_tokens": min(counts),
         "max_retained_tokens": max(counts),
@@ -571,33 +586,78 @@ def sparse_stats_for_predictions(run, predictions):
 def write_run_metric_csv(run, predictions):
     output_path = RESULTS_ROOT / run.output_relpath
     rows = metric_rows_for_run(run, predictions)
-    fieldnames = sorted({key for row in rows for key in row.keys()})
+    fieldnames = [
+        "run_id", "dataset", "pope_split", "method", "selection_method",
+        "token_setting", "threshold_tau", "sample_count", "accuracy", "f1", "precision",
+        "recall", "yes_ratio", "tp", "tn", "fp", "fn",
+    ]
     write_csv(output_path, rows, fieldnames)
-    return output_path, rows[0]
+    return output_path, rows
 
 
-def write_adaptive_sparse_stats(run, predictions):
-    if run.selection_method != "threshold_adaptive":
-        return None
-    stats = sparse_stats_for_predictions(run, predictions)
-    if not stats:
-        raise RuntimeError(f"{run.run_id}: no adaptive retained-token stats were captured")
-    stats_path = (RESULTS_ROOT / run.prediction_relpath).with_name(
-        Path(run.prediction_relpath).stem + "_sparse_stats.json"
-    )
-    with open(stats_path, "w", encoding="utf-8") as f:
-        json.dump(stats, f, indent=2)
-    return stats_path
+def write_pope_summary(manifest):
+    summary_rows = []
+    for item in manifest:
+        stats = {}
+        pred_path = Path(item["prediction_file"])
+        predictions = [json.loads(line) for line in open(pred_path, "r", encoding="utf-8")]
+        if item["selection_method"] != "dense":
+            stats = sparse_stats_for_predictions(
+                PopeRun(
+                    run_id=item["run_id"],
+                    method_label=item["method"],
+                    selection_method=item["selection_method"],
+                    retained_tokens=item["retained_tokens"],
+                    threshold_tau=item.get("threshold_tau", DEFAULT_THRESHOLD_TAU),
+                    prediction_relpath="",
+                    output_relpath="",
+                ),
+                predictions,
+            )
+
+        for metric in item["metrics"]:
+            summary_rows.append({
+                "run_id": item["run_id"],
+                "dataset": "POPE",
+                "pope_split": metric["pope_split"],
+                "method": item["method"],
+                "selection_method": item["selection_method"],
+                "token_setting": item["retained_tokens"],
+                "sample_count": metric["sample_count"],
+                "accuracy": metric["accuracy"],
+                "f1": metric["f1"],
+                "precision": metric["precision"],
+                "recall": metric["recall"],
+                "yes_ratio": metric["yes_ratio"],
+                "average_retained_tokens": stats.get("average_retained_tokens", ""),
+                "min_retained_tokens": stats.get("min_retained_tokens", ""),
+                "max_retained_tokens": stats.get("max_retained_tokens", ""),
+                "threshold_tau": item.get("threshold_tau", ""),
+                "prediction_file": item["prediction_file"],
+                "metric_file": item["metric_file"],
+                "log_file": item["log_file"],
+                "status": item["status"],
+            })
+
+    fieldnames = [
+        "run_id", "dataset", "pope_split", "method", "selection_method",
+        "token_setting", "sample_count", "accuracy", "f1", "precision",
+        "recall", "yes_ratio", "average_retained_tokens",
+        "min_retained_tokens", "max_retained_tokens", "threshold_tau",
+        "prediction_file", "metric_file", "log_file", "status",
+    ]
+    write_csv(SUMMARY_DIR / "pope_summary.csv", summary_rows, fieldnames)
+    write_csv(SUMMARY_DIR / "final_evaluation_table.csv", summary_rows, fieldnames)
+    return summary_rows
 
 
-# ----- Smoke runner -----
+# ----- Runner -----
 
-def run_one_protocol_smoke(run):
+def run_one_pope_experiment(run):
     predictions = []
     metadata_errors = []
     log_path = LOG_DIR / f"{run.run_id}.jsonl"
     prediction_path = RESULTS_ROOT / run.prediction_relpath
-    samples = SAMPLE_SETS[run.dataset_key]
 
     with open(log_path, "w", encoding="utf-8") as log_file:
         log_file.write(json.dumps({
@@ -606,11 +666,12 @@ def run_one_protocol_smoke(run):
             "selection_method": run.selection_method,
             "retained_tokens": run.retained_tokens,
             "threshold_tau": run.threshold_tau,
-            "sample_count": len(samples),
+            "pope_samples_per_category": POPE_SAMPLES_PER_CATEGORY,
+            "sample_count": len(POPE_SAMPLES),
             "time": time.time(),
         }) + "\n")
 
-        for sample_idx, row in enumerate(samples, start=1):
+        for sample_idx, row in enumerate(POPE_SAMPLES, start=1):
             start = time.time()
             answer, metadata = run_generation(row, run)
             elapsed = time.time() - start
@@ -618,15 +679,21 @@ def run_one_protocol_smoke(run):
             predictions.append(record)
             metadata_errors.extend(validate_metadata(run, metadata, row["question_id"]))
 
+            if sample_idx % 50 == 0 or sample_idx == len(POPE_SAMPLES):
+                print(f"  {run.run_id}: {sample_idx}/{len(POPE_SAMPLES)} samples")
+
             log_file.write(json.dumps({
                 "event": "sample_done",
                 "run_id": run.run_id,
                 "sample_index": sample_idx,
                 "question_id": row["question_id"],
+                "pope_category": row["pope_category"],
                 "seconds": elapsed,
                 "retained_token_count": metadata.get("retained_token_count"),
             }) + "\n")
             log_file.flush()
+            if sample_idx % 50 == 0:
+                write_jsonl(prediction_path, predictions)
             torch.cuda.empty_cache()
 
         log_file.write(json.dumps({
@@ -641,12 +708,11 @@ def run_one_protocol_smoke(run):
         raise RuntimeError(f"{run.run_id} metadata validation failed:\n" + "\n".join(metadata_errors[:20]))
 
     write_jsonl(prediction_path, predictions)
-    metric_path, metric_row = write_run_metric_csv(run, predictions)
-    adaptive_stats_path = write_adaptive_sparse_stats(run, predictions)
+    metric_path, metric_rows = write_run_metric_csv(run, predictions)
 
     manifest_record = {
         "run_id": run.run_id,
-        "dataset": run.dataset_key,
+        "dataset": "pope",
         "method": run.method_label,
         "selection_method": run.selection_method,
         "retained_tokens": run.retained_tokens,
@@ -655,106 +721,28 @@ def run_one_protocol_smoke(run):
         "prediction_file": str(prediction_path),
         "metric_file": str(metric_path),
         "log_file": str(log_path),
-        "adaptive_sparse_stats_file": str(adaptive_stats_path) if adaptive_stats_path else "",
-        "metric": metric_row,
+        "metrics": metric_rows,
         "status": "ok",
     }
     return manifest_record
 
 
-def write_summary_tables(manifest):
-    summary_rows = []
-    for item in manifest:
-        stats = {}
-        pred_path = Path(item["prediction_file"])
-        predictions = [json.loads(line) for line in open(pred_path, "r", encoding="utf-8")]
-        if item["selection_method"] != "dense":
-            stats = sparse_stats_for_predictions(
-                SmokeRun(
-                    run_id=item["run_id"],
-                    dataset_key=item["dataset"],
-                    method_label=item["method"],
-                    selection_method=item["selection_method"],
-                    retained_tokens=item["retained_tokens"],
-                    threshold_tau=item["threshold_tau"],
-                    prediction_relpath="",
-                    output_relpath="",
-                ),
-                predictions,
-            )
-        metric = item["metric"]
-        summary_rows.append({
-            "run_id": item["run_id"],
-            "dataset": item["dataset"],
-            "method": item["method"],
-            "selection_method": item["selection_method"],
-            "token_setting": item["retained_tokens"],
-            "threshold_tau": item["threshold_tau"] if item["selection_method"] == "threshold_adaptive" else "",
-            "sample_count": item["sample_count"],
-            "accuracy": metric.get("accuracy", ""),
-            "f1": metric.get("f1", ""),
-            "average_retained_tokens": stats.get("average_retained_tokens", ""),
-            "min_retained_tokens": stats.get("min_retained_tokens", ""),
-            "max_retained_tokens": stats.get("max_retained_tokens", ""),
-            "prediction_file": item["prediction_file"],
-            "metric_file": item["metric_file"],
-            "log_file": item["log_file"],
-            "status": item["status"],
-        })
-
-    fieldnames = [
-        "run_id", "dataset", "method", "selection_method", "token_setting",
-        "threshold_tau", "sample_count", "accuracy", "f1",
-        "average_retained_tokens", "min_retained_tokens", "max_retained_tokens",
-        "prediction_file", "metric_file", "log_file", "status",
-    ]
-    write_csv(SUMMARY_DIR / "final_evaluation_table.csv", summary_rows, fieldnames)
-
-    write_csv(
-        SUMMARY_DIR / "gqa_summary.csv",
-        [row for row in summary_rows if row["dataset"] == "gqa" and row["selection_method"] != "threshold_adaptive"],
-        fieldnames,
-    )
-    write_csv(
-        SUMMARY_DIR / "pope_summary.csv",
-        [row for row in summary_rows if row["dataset"] == "pope" and row["selection_method"] != "threshold_adaptive"],
-        fieldnames,
-    )
-    write_csv(
-        SUMMARY_DIR / "failure_mining_summary.csv",
-        [row for row in summary_rows if row["dataset"] == "failure_mining" and row["selection_method"] != "threshold_adaptive"],
-        fieldnames,
-    )
-    write_csv(
-        SUMMARY_DIR / "adaptive_threshold_summary.csv",
-        [
-            row for row in summary_rows
-            if row["selection_method"] == "threshold_adaptive"
-            or row["run_id"].endswith("OURS-64")
-            or row["run_id"].endswith("OURS-128")
-        ],
-        fieldnames,
-    )
-
-    return summary_rows
-
-
-def run_protocol_smoke_test():
+def run_pope_main_experiments():
     manifest = []
     start = time.time()
-    for index, run in enumerate(PROTOCOL_SMOKE_RUNS, start=1):
-        print(f"[{index}/{len(PROTOCOL_SMOKE_RUNS)}] {run.run_id} ({run.selection_method}, retained={run.retained_tokens}, tau={run.threshold_tau})")
-        record = run_one_protocol_smoke(run)
+    for index, run in enumerate(SELECTED_POPE_RUNS, start=1):
+        print(f"[{index}/{len(SELECTED_POPE_RUNS)}] {run.run_id} ({run.selection_method}, retained={run.retained_tokens})")
+        record = run_one_pope_experiment(run)
         manifest.append(record)
         with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
         print("  ok:", record["prediction_file"])
 
-    summary_rows = write_summary_tables(manifest)
+    summary_rows = write_pope_summary(manifest)
     print()
-    print("Smoke protocol complete.")
+    print("POPE main experiment complete.")
     print("Runs:", len(manifest))
-    print("Samples per dataset:", {key: len(value) for key, value in SAMPLE_SETS.items()})
+    print("Samples:", len(POPE_SAMPLES))
     print("Output root:", OUTPUT_ROOT)
     print("Manifest:", MANIFEST_PATH)
     print("Summary rows:", len(summary_rows))
@@ -762,9 +750,8 @@ def run_protocol_smoke_test():
     return manifest
 ```
 
-Cell 6: Load model
+Cell 5: Load model
 ```python
-
 disable_torch_init()
 torch.backends.cuda.matmul.allow_tf32 = True
 
@@ -785,11 +772,34 @@ print("Loaded:", MODEL_PATH)
 print("Conversation mode:", CONV_MODE)
 print("Context length:", context_len)
 print("Max new tokens:", MAX_NEW_TOKENS)
-print("Smoke sample count:", SMOKE_SAMPLE_COUNT)
+print("POPE sample count:", len(POPE_SAMPLES))
+print("Selected POPE run count:", len(SELECTED_POPE_RUNS))
+print("Selected run IDs:", [run.run_id for run in SELECTED_POPE_RUNS])
 print("Load seconds:", round(time.time() - load_start, 2))
 ```
 
-Cell 7: Run smoke test
+Cell 6: Run selected POPE main fixed-budget experiment(s)
 ```python
-manifest = run_protocol_smoke_test()
+manifest = run_pope_main_experiments()
+```
+
+Cell 7: Zip all outputs for download
+```python
+import shutil
+from pathlib import Path
+
+output_root = Path(OUTPUT_ROOT)
+download_zip = Path(DOWNLOAD_ZIP)
+if download_zip.exists():
+    download_zip.unlink()
+
+archive_base = download_zip.with_suffix("")
+created_zip = shutil.make_archive(
+    base_name=str(archive_base),
+    format="zip",
+    root_dir=str(output_root),
+)
+
+print("Created:", created_zip)
+print("Size MB:", round(Path(created_zip).stat().st_size / (1024 * 1024), 2))
 ```

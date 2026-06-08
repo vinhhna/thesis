@@ -8,3 +8,12 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+
+# Local evaluation data and Kaggle dataset packages.
+data/full_eval_downloads/
+data/kaggle_datasets/
+
+# Downloaded Kaggle experiment outputs.
+pope_main_results_download/
+*_results_download/
+*_results_download.zip

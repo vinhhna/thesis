@@ -389,3 +389,7 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
     + if tau is lower (ex. 0.80), it filters more aggressively because tokens are rejected at a lower similarity level.
     + if tau is higher (ex. 0.90), it filters more leniently.
     + tau=0.85 is a middle / default setting, strict enough but not too aggressive.
+
+- Runs:
+    + made final test runs on a very small subsets of 10 images to make sure that all modules are running correctly
+    +
