@@ -141,8 +141,7 @@ LLAVA_ROOT = "/kaggle/working/thesis/SparseVLMs"
 POPE_ROOT = find_kaggle_input_dir("POPE")
 POPE_ANNOTATIONS_DIR = POPE_ROOT / "annotations"
 POPE_IMAGE_DIR = POPE_ROOT / "val2014"
-OUTPUT_ROOT = "/kaggle/working/pope_main_results"
-DOWNLOAD_ZIP = "/kaggle/working/pope_main_results_download.zip"
+OUTPUT_BASE_ROOT = "/kaggle/working/pope_runs"
 
 os.environ["USE_FLAX"] = "NO"
 os.environ["USE_JAX"] = "NO"
@@ -159,7 +158,7 @@ print("CUDA available:", torch.cuda.is_available())
 print("POPE root:", POPE_ROOT)
 print("POPE annotations:", POPE_ANNOTATIONS_DIR)
 print("POPE images:", POPE_IMAGE_DIR)
-print("Output root:", OUTPUT_ROOT)
+print("Output base root:", OUTPUT_BASE_ROOT)
 ```
 
 Cell 4: POPE production helpers
@@ -223,14 +222,7 @@ POPE_SAMPLES_PER_CATEGORY = 500
 POPE_ROOT = Path(POPE_ROOT)
 POPE_ANNOTATIONS_DIR = Path(POPE_ANNOTATIONS_DIR)
 POPE_IMAGE_DIR = Path(POPE_IMAGE_DIR)
-OUTPUT_ROOT = Path(OUTPUT_ROOT)
-RESULTS_ROOT = OUTPUT_ROOT / "results"
-LOG_DIR = OUTPUT_ROOT / "logs"
-SUMMARY_DIR = RESULTS_ROOT / "summary"
-MANIFEST_PATH = OUTPUT_ROOT / "pope_main_manifest.json"
-
-for path in [RESULTS_ROOT, LOG_DIR, SUMMARY_DIR]:
-    path.mkdir(parents=True, exist_ok=True)
+OUTPUT_BASE_ROOT = Path(OUTPUT_BASE_ROOT)
 
 
 # ----- Run catalog -----
@@ -276,6 +268,21 @@ def selected_pope_runs():
 
 
 SELECTED_POPE_RUNS = selected_pope_runs()
+if len(SELECTED_POPE_RUNS) != 1:
+    raise ValueError(
+        "Run exactly one POPE experiment per Kaggle session so each download zip "
+        "contains only one run. Set RUN_IDS_TO_RUN to a single run ID."
+    )
+
+OUTPUT_ROOT = OUTPUT_BASE_ROOT / SELECTED_POPE_RUNS[0].run_id
+DOWNLOAD_ZIP = Path(f"/kaggle/working/{SELECTED_POPE_RUNS[0].run_id}_download.zip")
+RESULTS_ROOT = OUTPUT_ROOT / "results"
+LOG_DIR = OUTPUT_ROOT / "logs"
+SUMMARY_DIR = RESULTS_ROOT / "summary"
+MANIFEST_PATH = OUTPUT_ROOT / "pope_main_manifest.json"
+
+for path in [RESULTS_ROOT, LOG_DIR, SUMMARY_DIR]:
+    path.mkdir(parents=True, exist_ok=True)
 
 
 # ----- Metrics -----

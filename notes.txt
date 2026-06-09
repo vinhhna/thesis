@@ -392,4 +392,17 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
 
 - Runs:
     + made final test runs on a very small subsets of 10 images to make sure that all modules are running correctly
-    +
+    + firstly run pope, dense, took 10 hours (too long), results are 85.19 to 85.9 and 86.08 to 85.9
+    + secondly, sparse-64, acc 81.00, f1 81.81, while paper got 77.5 both
+- Results up till now:
+    + method | tokens | accuracy | f1 | precision | recall
+    + dense | 576 | 0.8653 | 0.8761 | 0.8216 | 0.9382
+    + original | 128 | 0.8533 | 0.8632 | 0.8194 | 0.9120
+    + ours | 128 | 0.8527 | 0.8660 | 0.8041 | 0.9382
+    + threshold-fixed | 128 | 0.8507 | 0.8641 | 0.8027 | 0.9356
+    + original | 64 | 0.8100 | 0.8181 | 0.7953 | 0.8423
+    + ours | 64 | 0.8300 | 0.8409 | 0.8005 | 0.8857
+    + threshold-fixed | 64 | 0.8433 | 0.8534 | 0.8124 | 0.8988
+    + threshold-adaptive tau=0.80 | variable, avg 33.2 | 0.8240 | 0.8335 | 0.8012 | 0.8686
+    + threshold-adaptive tau=0.85 | variable, avg 33.6 | 0.8340 | 0.8415 | 0.8160 | 0.8686
+    + threshold-adaptive tau=0.90 | variable, avg 34.1 | 0.8353 | 0.8432 | 0.8157 | 0.8725

@@ -1,0 +1,5 @@
+run_id,dataset,pope_split,method,selection_method,token_setting,threshold_tau,sample_count,accuracy,f1,precision,recall,yes_ratio,tp,tn,fp,fn
+POPE-THRESHOLD-FIXED-64,POPE,all,Threshold-Fixed-k,threshold_fixed,64,,1500,0.8433333333333334,0.8533998752339363,0.8123515439429929,0.8988173455978975,0.5613333333333334,684,581,158,77
+POPE-THRESHOLD-FIXED-64,POPE,adversarial,Threshold-Fixed-k,threshold_fixed,64,,500,0.772,0.797872340425532,0.7165605095541401,0.9,0.628,225,161,89,25
+POPE-THRESHOLD-FIXED-64,POPE,popular,Threshold-Fixed-k,threshold_fixed,64,,500,0.88,0.8823529411764707,0.8653846153846154,0.9,0.52,225,215,35,25
+POPE-THRESHOLD-FIXED-64,POPE,random,Threshold-Fixed-k,threshold_fixed,64,,500,0.878,0.8846880907372401,0.8731343283582089,0.896551724137931,0.536,234,205,34,27
