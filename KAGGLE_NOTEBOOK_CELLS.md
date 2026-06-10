@@ -1,24 +1,25 @@
-# SparseVLM Kaggle POPE Production Run
+# SparseVLM Kaggle GQA Production Run
 
-These cells run POPE experiments from `evaluation_protocol_updated.md`.
+These cells run GQA experiments from `evaluation_protocol_updated.md`.
 
-Kaggle may not handle many methods in one session, so this notebook runs a configurable subset. By default it runs one non-dense configuration on a balanced POPE subset: 500 adversarial, 500 popular, and 500 random samples. For later Kaggle sessions, change `RUN_IDS_TO_RUN` in Cell 4 to the next run ID.
+Kaggle should run one method per session. Change `RUN_IDS_TO_RUN` in Cell 4 to the next run ID, then run the notebook. Each run writes to a run-specific output directory and creates one zip file for download.
 
-The output goes to `/kaggle/working/pope_main_results`. The final cell creates `/kaggle/working/pope_main_results_download.zip` so the results can be downloaded as one file from Kaggle.
+This notebook uses a deterministic 1500-sample GQA validation subset. The subset is selected once per run from the same question file using a fixed seed, so every method sees the same questions.
 
-Dense has already been completed on the full POPE split, so the default order starts from SparseVLM-Original.
+Important dataset note: the local GQA package currently contains images and `val_choices.json`, but the actual question file is required for inference. The notebook first looks for `val_balanced_questions.json` or `val_all_questions.json` in the Kaggle input. If it cannot find one, it tries to download `questions1.2.zip` from the official GQA release into `/kaggle/working`. If Kaggle internet is disabled, upload the GQA questions file as part of the Kaggle Dataset.
 
 Suggested run order:
 
-1. `POPE-SPARSE-ORIG-64`
-2. `POPE-OURS-64`
-3. `POPE-SPARSE-ORIG-128`
-4. `POPE-OURS-128`
-5. `POPE-THRESHOLD-FIXED-64`
-6. `POPE-THRESHOLD-FIXED-128`
-7. `POPE-THRESHOLD-ADAPT-080`
-8. `POPE-THRESHOLD-ADAPT-085`
-9. `POPE-THRESHOLD-ADAPT-090`
+1. `GQA-SPARSE-ORIG-64`
+2. `GQA-OURS-64`
+3. `GQA-THRESHOLD-FIXED-64`
+4. `GQA-SPARSE-ORIG-128`
+5. `GQA-OURS-128`
+6. `GQA-THRESHOLD-FIXED-128`
+7. `GQA-DENSE-576`
+8. `GQA-THRESHOLD-ADAPT-080`
+9. `GQA-THRESHOLD-ADAPT-085`
+10. `GQA-THRESHOLD-ADAPT-090`
 
 Run Cell 2 only after a fresh clone or package reset, then restart the Kaggle kernel before continuing.
 
@@ -82,7 +83,7 @@ pip(
     "orbax-checkpoint",
 )
 
-pip("install", "--force-reinstall", "numpy==1.26.4", "protobuf", "sentencepiece", "shortuuid")
+pip("install", "--force-reinstall", "numpy==1.26.4", "protobuf", "sentencepiece", "shortuuid", "ijson")
 pip("install", "transformers==4.37.2", "tokenizers==0.15.1", "accelerate==0.21.0", "peft==0.7.1")
 pip("install", "einops==0.6.1", "einops-exts==0.0.4", "timm==0.6.13", "markdown2[all]")
 
@@ -94,8 +95,8 @@ Cell 3: Runtime paths and environment
 %cd /kaggle/working/thesis/SparseVLMs
 
 import os
-import zipfile
 import sys
+import zipfile
 from pathlib import Path
 
 import torch
@@ -138,10 +139,10 @@ def find_kaggle_input_dir(required_child):
 
 REPO_ROOT = "/kaggle/working/thesis"
 LLAVA_ROOT = "/kaggle/working/thesis/SparseVLMs"
-POPE_ROOT = find_kaggle_input_dir("POPE")
-POPE_ANNOTATIONS_DIR = POPE_ROOT / "annotations"
-POPE_IMAGE_DIR = POPE_ROOT / "val2014"
-OUTPUT_BASE_ROOT = "/kaggle/working/pope_runs"
+GQA_ROOT = find_kaggle_input_dir("GQA")
+GQA_IMAGE_DIR = GQA_ROOT / "images"
+GQA_EVAL_DIR = GQA_ROOT / "eval"
+OUTPUT_BASE_ROOT = "/kaggle/working/gqa_runs"
 
 os.environ["USE_FLAX"] = "NO"
 os.environ["USE_JAX"] = "NO"
@@ -155,23 +156,27 @@ if LLAVA_ROOT not in sys.path:
 print("Torch:", torch.__version__)
 print("Torch CUDA build:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
-print("POPE root:", POPE_ROOT)
-print("POPE annotations:", POPE_ANNOTATIONS_DIR)
-print("POPE images:", POPE_IMAGE_DIR)
+print("GQA root:", GQA_ROOT)
+print("GQA eval dir:", GQA_EVAL_DIR)
+print("GQA image dir:", GQA_IMAGE_DIR)
 print("Output base root:", OUTPUT_BASE_ROOT)
 ```
 
-Cell 4: POPE production helpers
+Cell 4: GQA production helpers
 ```python
 import csv
 import json
+import random
 import re
 import sys
 import time
+import urllib.request
+import zipfile
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
+import ijson
 import shortuuid
 import torch
 from PIL import Image
@@ -217,18 +222,30 @@ NUM_BEAMS = 1
 CANDIDATE_POOL_FACTOR = 2
 DEFAULT_THRESHOLD_TAU = 0.85
 SPARSE_PRUNING_LOC = [2, 6, 15]
-POPE_SAMPLES_PER_CATEGORY = 500
 
-POPE_ROOT = Path(POPE_ROOT)
-POPE_ANNOTATIONS_DIR = Path(POPE_ANNOTATIONS_DIR)
-POPE_IMAGE_DIR = Path(POPE_IMAGE_DIR)
+GQA_SUBSET_SIZE = 1500
+GQA_SUBSET_SEED = 20260610
+GQA_SHORT_ANSWER_SUFFIX = "\nAnswer the question using a single word or phrase."
+GQA_DOWNLOAD_QUESTIONS_IF_MISSING = True
+GQA_QUESTIONS_URLS = [
+    "https://downloads.cs.stanford.edu/nlp/data/gqa/questions1.2.zip",
+    "https://nlp.stanford.edu/data/gqa/questions1.2.zip",
+]
+GQA_QUESTION_FILE_PREFERENCE = [
+    "val_balanced_questions.json",
+    "val_all_questions.json",
+]
+
+GQA_ROOT = Path(GQA_ROOT)
+GQA_IMAGE_DIR = Path(GQA_IMAGE_DIR)
+GQA_EVAL_DIR = Path(GQA_EVAL_DIR)
 OUTPUT_BASE_ROOT = Path(OUTPUT_BASE_ROOT)
 
 
 # ----- Run catalog -----
 
 @dataclass(frozen=True)
-class PopeRun:
+class GqaRun:
     run_id: str
     method_label: str
     selection_method: str
@@ -238,145 +255,252 @@ class PopeRun:
     threshold_tau: float = DEFAULT_THRESHOLD_TAU
 
 
-POPE_RUNS = [
-    PopeRun("POPE-DENSE-576", "Dense / Vanilla", "dense", 576, "pope/predictions/pope_dense_576.jsonl", "pope/pope_dense_576.csv"),
-    PopeRun("POPE-SPARSE-ORIG-128", "SparseVLM-Original", "topk", 128, "pope/predictions/pope_sparsevlm_original_128.jsonl", "pope/pope_sparsevlm_original_128.csv"),
-    PopeRun("POPE-SPARSE-ORIG-64", "SparseVLM-Original", "topk", 64, "pope/predictions/pope_sparsevlm_original_64.jsonl", "pope/pope_sparsevlm_original_64.csv"),
-    PopeRun("POPE-OURS-128", "Ours", "mmr", 128, "pope/predictions/pope_ours_128.jsonl", "pope/pope_ours_128.csv"),
-    PopeRun("POPE-OURS-64", "Ours", "mmr", 64, "pope/predictions/pope_ours_64.jsonl", "pope/pope_ours_64.csv"),
-    PopeRun("POPE-THRESHOLD-FIXED-128", "Threshold-Fixed-k", "threshold_fixed", 128, "pope/predictions/pope_threshold_fixed_128.jsonl", "pope/pope_threshold_fixed_128.csv"),
-    PopeRun("POPE-THRESHOLD-FIXED-64", "Threshold-Fixed-k", "threshold_fixed", 64, "pope/predictions/pope_threshold_fixed_64.jsonl", "pope/pope_threshold_fixed_64.csv"),
-    PopeRun("POPE-THRESHOLD-ADAPT-080", "Threshold-Adaptive", "threshold_adaptive", 64, "pope/predictions/pope_threshold_adaptive_tau080.jsonl", "pope/pope_threshold_adaptive_tau080.csv", threshold_tau=0.80),
-    PopeRun("POPE-THRESHOLD-ADAPT-085", "Threshold-Adaptive", "threshold_adaptive", 64, "pope/predictions/pope_threshold_adaptive_tau085.jsonl", "pope/pope_threshold_adaptive_tau085.csv", threshold_tau=0.85),
-    PopeRun("POPE-THRESHOLD-ADAPT-090", "Threshold-Adaptive", "threshold_adaptive", 64, "pope/predictions/pope_threshold_adaptive_tau090.jsonl", "pope/pope_threshold_adaptive_tau090.csv", threshold_tau=0.90),
+GQA_RUNS = [
+    GqaRun("GQA-DENSE-576", "Dense / Vanilla", "dense", 576, "gqa/predictions/gqa_dense_576.jsonl", "gqa/gqa_dense_576.csv"),
+    GqaRun("GQA-SPARSE-ORIG-128", "SparseVLM-Original", "topk", 128, "gqa/predictions/gqa_sparsevlm_original_128.jsonl", "gqa/gqa_sparsevlm_original_128.csv"),
+    GqaRun("GQA-SPARSE-ORIG-64", "SparseVLM-Original", "topk", 64, "gqa/predictions/gqa_sparsevlm_original_64.jsonl", "gqa/gqa_sparsevlm_original_64.csv"),
+    GqaRun("GQA-OURS-128", "Ours", "mmr", 128, "gqa/predictions/gqa_ours_128.jsonl", "gqa/gqa_ours_128.csv"),
+    GqaRun("GQA-OURS-64", "Ours", "mmr", 64, "gqa/predictions/gqa_ours_64.jsonl", "gqa/gqa_ours_64.csv"),
+    GqaRun("GQA-THRESHOLD-FIXED-128", "Threshold-Fixed-k", "threshold_fixed", 128, "gqa/predictions/gqa_threshold_fixed_128.jsonl", "gqa/gqa_threshold_fixed_128.csv"),
+    GqaRun("GQA-THRESHOLD-FIXED-64", "Threshold-Fixed-k", "threshold_fixed", 64, "gqa/predictions/gqa_threshold_fixed_64.jsonl", "gqa/gqa_threshold_fixed_64.csv"),
+    GqaRun("GQA-THRESHOLD-ADAPT-080", "Threshold-Adaptive", "threshold_adaptive", 64, "gqa/predictions/gqa_threshold_adaptive_tau080.jsonl", "gqa/gqa_threshold_adaptive_tau080.csv", threshold_tau=0.80),
+    GqaRun("GQA-THRESHOLD-ADAPT-085", "Threshold-Adaptive", "threshold_adaptive", 64, "gqa/predictions/gqa_threshold_adaptive_tau085.jsonl", "gqa/gqa_threshold_adaptive_tau085.csv", threshold_tau=0.85),
+    GqaRun("GQA-THRESHOLD-ADAPT-090", "Threshold-Adaptive", "threshold_adaptive", 64, "gqa/predictions/gqa_threshold_adaptive_tau090.jsonl", "gqa/gqa_threshold_adaptive_tau090.csv", threshold_tau=0.90),
 ]
 
-# Change this list for each Kaggle session. Keep it short if Kaggle memory or
-# runtime is tight. Dense has already been completed, so the default next run is
-# the aggressive SparseVLM baseline.
+# Change this list for each Kaggle session. Keep exactly one run ID here.
 RUN_IDS_TO_RUN = [
-    "POPE-SPARSE-ORIG-64",
+    "GQA-SPARSE-ORIG-64",
 ]
 
 
-def selected_pope_runs():
-    run_by_id = {run.run_id: run for run in POPE_RUNS}
+def selected_gqa_runs():
+    run_by_id = {run.run_id: run for run in GQA_RUNS}
     missing = [run_id for run_id in RUN_IDS_TO_RUN if run_id not in run_by_id]
     if missing:
         raise ValueError(f"Unknown RUN_IDS_TO_RUN entries: {missing}")
     return [run_by_id[run_id] for run_id in RUN_IDS_TO_RUN]
 
 
-SELECTED_POPE_RUNS = selected_pope_runs()
-if len(SELECTED_POPE_RUNS) != 1:
+SELECTED_GQA_RUNS = selected_gqa_runs()
+if len(SELECTED_GQA_RUNS) != 1:
     raise ValueError(
-        "Run exactly one POPE experiment per Kaggle session so each download zip "
+        "Run exactly one GQA experiment per Kaggle session so each download zip "
         "contains only one run. Set RUN_IDS_TO_RUN to a single run ID."
     )
 
-OUTPUT_ROOT = OUTPUT_BASE_ROOT / SELECTED_POPE_RUNS[0].run_id
-DOWNLOAD_ZIP = Path(f"/kaggle/working/{SELECTED_POPE_RUNS[0].run_id}_download.zip")
+OUTPUT_ROOT = OUTPUT_BASE_ROOT / SELECTED_GQA_RUNS[0].run_id
+DOWNLOAD_ZIP = Path(f"/kaggle/working/{SELECTED_GQA_RUNS[0].run_id}_download.zip")
 RESULTS_ROOT = OUTPUT_ROOT / "results"
 LOG_DIR = OUTPUT_ROOT / "logs"
 SUMMARY_DIR = RESULTS_ROOT / "summary"
-MANIFEST_PATH = OUTPUT_ROOT / "pope_main_manifest.json"
+MANIFEST_PATH = OUTPUT_ROOT / "gqa_main_manifest.json"
+SUBSET_PATH = OUTPUT_ROOT / f"gqa_subset_seed{GQA_SUBSET_SEED}_n{GQA_SUBSET_SIZE}.jsonl"
 
 for path in [RESULTS_ROOT, LOG_DIR, SUMMARY_DIR]:
     path.mkdir(parents=True, exist_ok=True)
 
 
+# ----- GQA data discovery -----
+
+def find_first_existing(root, names):
+    for name in names:
+        matches = sorted(path for path in root.rglob(name) if path.is_file())
+        if matches:
+            return matches[0]
+    return None
+
+
+def download_file(url, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists() and destination.stat().st_size > 0:
+        print("Using existing download:", destination)
+        return destination
+    print("Downloading:", url)
+    print("Destination:", destination)
+    with urllib.request.urlopen(url, timeout=60) as response, open(destination, "wb") as output:
+        total = int(response.headers.get("Content-Length") or 0)
+        downloaded = 0
+        start = time.time()
+        while True:
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                break
+            output.write(chunk)
+            downloaded += len(chunk)
+            if total and (downloaded // (128 * 1024 * 1024)) != ((downloaded - len(chunk)) // (128 * 1024 * 1024)):
+                pct = downloaded * 100 / total
+                elapsed = max(time.time() - start, 1e-6)
+                speed = downloaded / elapsed
+                remaining = (total - downloaded) / speed if speed else 0
+                print(f"  {pct:.1f}% downloaded, ETA {remaining / 60:.1f} min")
+    return destination
+
+
+def extract_gqa_question_file_from_zip(zip_path):
+    target_root = Path("/kaggle/working/gqa_questions")
+    target_root.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as archive:
+        names = archive.namelist()
+        for desired in GQA_QUESTION_FILE_PREFERENCE:
+            matches = [name for name in names if name.endswith(desired)]
+            if matches:
+                member = sorted(matches)[0]
+                target_path = target_root / desired
+                if not target_path.exists():
+                    print("Extracting GQA question file:", member)
+                    with archive.open(member) as src, open(target_path, "wb") as dst:
+                        while True:
+                            chunk = src.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            dst.write(chunk)
+                return target_path
+    raise FileNotFoundError(f"No validation question file found inside {zip_path}")
+
+
+def find_gqa_question_file():
+    question_path = find_first_existing(GQA_ROOT, GQA_QUESTION_FILE_PREFERENCE)
+    if question_path:
+        return question_path
+
+    input_root = Path("/kaggle/input")
+    zip_matches = sorted(input_root.rglob("questions1.2.zip")) + sorted(GQA_ROOT.rglob("questions1.2.zip"))
+    if zip_matches:
+        return extract_gqa_question_file_from_zip(zip_matches[0])
+
+    if GQA_DOWNLOAD_QUESTIONS_IF_MISSING:
+        download_dir = Path("/kaggle/working/gqa_downloads")
+        last_error = None
+        for url in GQA_QUESTIONS_URLS:
+            try:
+                zip_path = download_file(url, download_dir / "questions1.2.zip")
+                return extract_gqa_question_file_from_zip(zip_path)
+            except Exception as exc:
+                last_error = exc
+                print("Question download attempt failed:", repr(exc))
+        raise FileNotFoundError(
+            "Could not find or download GQA validation questions. "
+            "Upload val_balanced_questions.json or questions1.2.zip to the Kaggle Dataset."
+        ) from last_error
+
+    raise FileNotFoundError(
+        "Missing GQA validation questions. Upload val_balanced_questions.json, "
+        "val_all_questions.json, or questions1.2.zip to the Kaggle Dataset."
+    )
+
+
+GQA_QUESTION_PATH = find_gqa_question_file()
+GQA_CHOICES_PATH = find_first_existing(GQA_ROOT, ["val_choices.json"])
+
+print("GQA question file:", GQA_QUESTION_PATH)
+print("GQA choices file:", GQA_CHOICES_PATH)
+
+
 # ----- Metrics -----
 
-def normalize_answer(text):
+def normalize_gqa_answer(text):
     text = str(text).strip().lower()
-    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    text = text.rstrip(".")
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
-def pope_label_from_answer(text):
-    words = normalize_answer(text).split()
-    if "no" in words or "not" in words:
-        return "no"
-    return "yes"
-
-
-def safe_div(numerator, denominator):
-    return numerator / denominator if denominator else 0.0
-
-
-def compute_pope_metrics(predictions):
-    y_true = [1 if normalize_answer(item["ground_truth"]) == "yes" else 0 for item in predictions]
-    y_pred = [1 if pope_label_from_answer(item["text"]) == "yes" else 0 for item in predictions]
-
-    tp = sum(1 for pred, gold in zip(y_pred, y_true) if pred == 1 and gold == 1)
-    tn = sum(1 for pred, gold in zip(y_pred, y_true) if pred == 0 and gold == 0)
-    fp = sum(1 for pred, gold in zip(y_pred, y_true) if pred == 1 and gold == 0)
-    fn = sum(1 for pred, gold in zip(y_pred, y_true) if pred == 0 and gold == 1)
-
-    precision = safe_div(tp, tp + fp)
-    recall = safe_div(tp, tp + fn)
-    f1 = safe_div(2 * precision * recall, precision + recall)
-    accuracy = safe_div(tp + tn, len(y_true))
-    yes_ratio = safe_div(sum(y_pred), len(y_pred))
+def compute_gqa_metrics(predictions):
+    correct = 0
+    for item in predictions:
+        if normalize_gqa_answer(item["text"]) == normalize_gqa_answer(item["ground_truth"]):
+            correct += 1
+    total = len(predictions)
     return {
-        "accuracy": accuracy,
-        "f1": f1,
-        "precision": precision,
-        "recall": recall,
-        "yes_ratio": yes_ratio,
-        "tp": tp,
-        "tn": tn,
-        "fp": fp,
-        "fn": fn,
+        "accuracy": correct / total if total else 0.0,
+        "correct": correct,
+        "total": total,
     }
 
 
-# ----- Dataset -----
+# ----- Sample selection -----
 
-def read_jsonl(path):
-    rows = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
+def iter_gqa_questions(question_path):
+    with open(question_path, "rb") as f:
+        for question_id, question in ijson.kvitems(f, ""):
+            yield str(question_id), question
 
 
-def build_pope_samples():
-    samples = []
-    for category in ["adversarial", "popular", "random"]:
-        path = POPE_ANNOTATIONS_DIR / f"coco_pope_{category}.json"
-        rows = read_jsonl(path)
-        if POPE_SAMPLES_PER_CATEGORY is not None:
-            rows = rows[:POPE_SAMPLES_PER_CATEGORY]
-        for row in rows:
-            image_path = POPE_IMAGE_DIR / row["image"]
-            if not image_path.exists():
-                raise FileNotFoundError(f"Missing POPE image: {image_path}")
-            samples.append({
-                "question_id": f"{category}_{row['question_id']}",
-                "pope_question_id": row["question_id"],
-                "pope_category": category,
-                "question": row["text"],
-                "image": row["image"],
-                "image_path": str(image_path),
-                "ground_truth": row["label"],
-            })
-    return samples
+def build_gqa_samples():
+    rng = random.Random(GQA_SUBSET_SEED)
+    selected = []
+    seen = 0
+    skipped_missing_image = 0
+    skipped_unbalanced = 0
+
+    for question_id, question in iter_gqa_questions(GQA_QUESTION_PATH):
+        if not question.get("isBalanced", True):
+            skipped_unbalanced += 1
+            continue
+
+        question_text = question.get("question", "")
+        answer = question.get("answer", "")
+        image_id = str(question.get("imageId", ""))
+        image_path = GQA_IMAGE_DIR / f"{image_id}.jpg"
+        if not question_text or not answer or not image_id:
+            continue
+        if not image_path.exists():
+            skipped_missing_image += 1
+            continue
+
+        types = question.get("types", {}) or {}
+        sample = {
+            "question_id": question_id,
+            "question": question_text,
+            "prompt": question_text + GQA_SHORT_ANSWER_SUFFIX,
+            "ground_truth": str(answer),
+            "image_id": image_id,
+            "image_path": str(image_path),
+            "is_balanced": bool(question.get("isBalanced", True)),
+            "structural_type": types.get("structural", ""),
+            "semantic_type": types.get("semantic", ""),
+            "detailed_type": types.get("detailed", ""),
+        }
+
+        seen += 1
+        if len(selected) < GQA_SUBSET_SIZE:
+            selected.append(sample)
+        else:
+            replace_idx = rng.randrange(seen)
+            if replace_idx < GQA_SUBSET_SIZE:
+                selected[replace_idx] = sample
+
+    if len(selected) < GQA_SUBSET_SIZE:
+        raise RuntimeError(
+            f"Only found {len(selected)} valid GQA samples, expected {GQA_SUBSET_SIZE}. "
+            f"Skipped missing images: {skipped_missing_image}; skipped unbalanced: {skipped_unbalanced}."
+        )
+
+    selected.sort(key=lambda item: item["question_id"])
+    return selected, {
+        "eligible_seen": seen,
+        "skipped_missing_image": skipped_missing_image,
+        "skipped_unbalanced": skipped_unbalanced,
+    }
 
 
-POPE_SAMPLES = build_pope_samples()
-print("POPE sample count:", len(POPE_SAMPLES))
-print("POPE category counts:", {
-    category: sum(1 for item in POPE_SAMPLES if item["pope_category"] == category)
-    for category in ["adversarial", "popular", "random"]
-})
-print("POPE samples per category cap:", POPE_SAMPLES_PER_CATEGORY)
-print("All POPE configured run count:", len(POPE_RUNS))
-print("Selected POPE run count:", len(SELECTED_POPE_RUNS))
-print("Selected run IDs:", [run.run_id for run in SELECTED_POPE_RUNS])
+def write_jsonl(path, records):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+GQA_SAMPLES, GQA_SAMPLE_STATS = build_gqa_samples()
+write_jsonl(SUBSET_PATH, GQA_SAMPLES)
+
+print("GQA subset count:", len(GQA_SAMPLES))
+print("GQA subset seed:", GQA_SUBSET_SEED)
+print("GQA subset path:", SUBSET_PATH)
+print("GQA sample stats:", GQA_SAMPLE_STATS)
+print("Selected GQA run count:", len(SELECTED_GQA_RUNS))
+print("Selected run IDs:", [run.run_id for run in SELECTED_GQA_RUNS])
 
 
 # ----- Inference -----
@@ -400,7 +524,7 @@ def prepare_image_tensor(image):
 
 def run_generation(row, run):
     image = Image.open(row["image_path"]).convert("RGB")
-    prompt = build_prompt(row["question"])
+    prompt = build_prompt(row["prompt"])
     input_ids = tokenizer_image_token(
         prompt,
         tokenizer,
@@ -476,12 +600,12 @@ def validate_metadata(run, metadata, sample_id):
     if run.selection_method == "dense":
         if metadata.get("retained_token_count") != 576:
             problems.append("dense retained_token_count should be 576")
-        return problems
+        return [f"{sample_id}: {problem}" for problem in problems]
 
     layer_stats = metadata.get("layer_token_stats")
     if not isinstance(layer_stats, list) or not layer_stats:
         problems.append("missing layer_token_stats")
-        return problems
+        return [f"{sample_id}: {problem}" for problem in problems]
 
     if metadata.get("retained_token_count") is None:
         problems.append("missing retained_token_count")
@@ -507,27 +631,25 @@ def validate_metadata(run, metadata, sample_id):
 def prediction_record(row, run, answer, metadata, elapsed):
     return {
         "question_id": row["question_id"],
-        "pope_question_id": row["pope_question_id"],
-        "pope_category": row["pope_category"],
-        "prompt": row["question"],
+        "prompt": row["prompt"],
+        "raw_question": row["question"],
         "text": answer,
+        "normalized_text": normalize_gqa_answer(answer),
         "answer_id": shortuuid.uuid(),
         "model_id": MODEL_PATH,
-        "dataset": "pope",
-        "image": row["image"],
+        "dataset": "gqa",
+        "image_id": row["image_id"],
         "image_path": row["image_path"],
         "ground_truth": row["ground_truth"],
+        "normalized_ground_truth": normalize_gqa_answer(row["ground_truth"]),
+        "is_correct": normalize_gqa_answer(answer) == normalize_gqa_answer(row["ground_truth"]),
+        "structural_type": row.get("structural_type", ""),
+        "semantic_type": row.get("semantic_type", ""),
+        "detailed_type": row.get("detailed_type", ""),
         "run_id": run.run_id,
         "metadata": metadata,
         "inference_seconds": elapsed,
     }
-
-
-def write_jsonl(path, records):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        for record in records:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def write_csv(path, rows, fieldnames):
@@ -538,37 +660,17 @@ def write_csv(path, rows, fieldnames):
         writer.writerows(rows)
 
 
-def metric_rows_for_run(run, predictions):
-    rows = []
-    for split_name in ["all", "adversarial", "popular", "random"]:
-        if split_name == "all":
-            split_predictions = predictions
-        else:
-            split_predictions = [
-                item for item in predictions
-                if item["pope_category"] == split_name
-            ]
-        metrics = compute_pope_metrics(split_predictions)
-        rows.append({
-            "run_id": run.run_id,
-            "dataset": "POPE",
-            "pope_split": split_name,
-            "method": run.method_label,
-            "selection_method": run.selection_method,
-            "token_setting": run.retained_tokens,
-            "threshold_tau": run.threshold_tau if run.selection_method == "threshold_adaptive" else "",
-            "sample_count": len(split_predictions),
-            "accuracy": metrics["accuracy"],
-            "f1": metrics["f1"],
-            "precision": metrics["precision"],
-            "recall": metrics["recall"],
-            "yes_ratio": metrics["yes_ratio"],
-            "tp": metrics["tp"],
-            "tn": metrics["tn"],
-            "fp": metrics["fp"],
-            "fn": metrics["fn"],
-        })
-    return rows
+def write_gqa_submission_json(path, predictions):
+    rows = [
+        {
+            "questionId": item["question_id"],
+            "prediction": normalize_gqa_answer(item["text"]),
+        }
+        for item in predictions
+    ]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(rows, f)
 
 
 def sparse_stats_for_predictions(run, predictions):
@@ -583,6 +685,7 @@ def sparse_stats_for_predictions(run, predictions):
         "selection_method": run.selection_method,
         "retained_tokens": run.retained_tokens,
         "threshold_tau": run.threshold_tau,
+        "candidate_pool_factor": CANDIDATE_POOL_FACTOR,
         "sample_count": len(counts),
         "average_retained_tokens": sum(counts) / len(counts),
         "min_retained_tokens": min(counts),
@@ -590,19 +693,35 @@ def sparse_stats_for_predictions(run, predictions):
     }
 
 
+def metric_rows_for_run(run, predictions):
+    metrics = compute_gqa_metrics(predictions)
+    row = {
+        "run_id": run.run_id,
+        "dataset": "GQA",
+        "method": run.method_label,
+        "selection_method": run.selection_method,
+        "token_setting": run.retained_tokens,
+        "threshold_tau": run.threshold_tau if run.selection_method == "threshold_adaptive" else "",
+        "sample_count": len(predictions),
+        "subset_seed": GQA_SUBSET_SEED,
+        "accuracy": metrics["accuracy"],
+        "correct": metrics["correct"],
+        "total": metrics["total"],
+    }
+    return [row]
+
+
 def write_run_metric_csv(run, predictions):
     output_path = RESULTS_ROOT / run.output_relpath
     rows = metric_rows_for_run(run, predictions)
-    fieldnames = [
-        "run_id", "dataset", "pope_split", "method", "selection_method",
-        "token_setting", "threshold_tau", "sample_count", "accuracy", "f1", "precision",
-        "recall", "yes_ratio", "tp", "tn", "fp", "fn",
-    ]
+    fieldnames = sorted({key for row in rows for key in row.keys()})
     write_csv(output_path, rows, fieldnames)
-    return output_path, rows
+    submission_path = output_path.with_name(output_path.stem + "_submission.json")
+    write_gqa_submission_json(submission_path, predictions)
+    return output_path, submission_path, rows
 
 
-def write_pope_summary(manifest):
+def write_gqa_summary(manifest):
     summary_rows = []
     for item in manifest:
         stats = {}
@@ -610,57 +729,55 @@ def write_pope_summary(manifest):
         predictions = [json.loads(line) for line in open(pred_path, "r", encoding="utf-8")]
         if item["selection_method"] != "dense":
             stats = sparse_stats_for_predictions(
-                PopeRun(
+                GqaRun(
                     run_id=item["run_id"],
                     method_label=item["method"],
                     selection_method=item["selection_method"],
                     retained_tokens=item["retained_tokens"],
-                    threshold_tau=item.get("threshold_tau", DEFAULT_THRESHOLD_TAU),
+                    threshold_tau=item["threshold_tau"],
                     prediction_relpath="",
                     output_relpath="",
                 ),
                 predictions,
             )
-
-        for metric in item["metrics"]:
-            summary_rows.append({
-                "run_id": item["run_id"],
-                "dataset": "POPE",
-                "pope_split": metric["pope_split"],
-                "method": item["method"],
-                "selection_method": item["selection_method"],
-                "token_setting": item["retained_tokens"],
-                "sample_count": metric["sample_count"],
-                "accuracy": metric["accuracy"],
-                "f1": metric["f1"],
-                "precision": metric["precision"],
-                "recall": metric["recall"],
-                "yes_ratio": metric["yes_ratio"],
-                "average_retained_tokens": stats.get("average_retained_tokens", ""),
-                "min_retained_tokens": stats.get("min_retained_tokens", ""),
-                "max_retained_tokens": stats.get("max_retained_tokens", ""),
-                "threshold_tau": item.get("threshold_tau", ""),
-                "prediction_file": item["prediction_file"],
-                "metric_file": item["metric_file"],
-                "log_file": item["log_file"],
-                "status": item["status"],
-            })
+        metric = item["metrics"][0]
+        summary_rows.append({
+            "run_id": item["run_id"],
+            "dataset": "GQA",
+            "method": item["method"],
+            "selection_method": item["selection_method"],
+            "token_setting": item["retained_tokens"],
+            "threshold_tau": item["threshold_tau"] if item["selection_method"] == "threshold_adaptive" else "",
+            "sample_count": item["sample_count"],
+            "subset_seed": GQA_SUBSET_SEED,
+            "accuracy": metric.get("accuracy", ""),
+            "correct": metric.get("correct", ""),
+            "total": metric.get("total", ""),
+            "average_retained_tokens": stats.get("average_retained_tokens", ""),
+            "min_retained_tokens": stats.get("min_retained_tokens", ""),
+            "max_retained_tokens": stats.get("max_retained_tokens", ""),
+            "prediction_file": item["prediction_file"],
+            "metric_file": item["metric_file"],
+            "submission_file": item["submission_file"],
+            "log_file": item["log_file"],
+            "status": item["status"],
+        })
 
     fieldnames = [
-        "run_id", "dataset", "pope_split", "method", "selection_method",
-        "token_setting", "sample_count", "accuracy", "f1", "precision",
-        "recall", "yes_ratio", "average_retained_tokens",
-        "min_retained_tokens", "max_retained_tokens", "threshold_tau",
-        "prediction_file", "metric_file", "log_file", "status",
+        "run_id", "dataset", "method", "selection_method", "token_setting",
+        "threshold_tau", "sample_count", "subset_seed", "accuracy", "correct",
+        "total", "average_retained_tokens", "min_retained_tokens",
+        "max_retained_tokens", "prediction_file", "metric_file",
+        "submission_file", "log_file", "status",
     ]
-    write_csv(SUMMARY_DIR / "pope_summary.csv", summary_rows, fieldnames)
+    write_csv(SUMMARY_DIR / "gqa_summary.csv", summary_rows, fieldnames)
     write_csv(SUMMARY_DIR / "final_evaluation_table.csv", summary_rows, fieldnames)
     return summary_rows
 
 
 # ----- Runner -----
 
-def run_one_pope_experiment(run):
+def run_one_gqa_experiment(run):
     predictions = []
     metadata_errors = []
     log_path = LOG_DIR / f"{run.run_id}.jsonl"
@@ -673,12 +790,13 @@ def run_one_pope_experiment(run):
             "selection_method": run.selection_method,
             "retained_tokens": run.retained_tokens,
             "threshold_tau": run.threshold_tau,
-            "pope_samples_per_category": POPE_SAMPLES_PER_CATEGORY,
-            "sample_count": len(POPE_SAMPLES),
+            "sample_count": len(GQA_SAMPLES),
+            "subset_seed": GQA_SUBSET_SEED,
+            "subset_path": str(SUBSET_PATH),
             "time": time.time(),
         }) + "\n")
 
-        for sample_idx, row in enumerate(POPE_SAMPLES, start=1):
+        for sample_idx, row in enumerate(GQA_SAMPLES, start=1):
             start = time.time()
             answer, metadata = run_generation(row, run)
             elapsed = time.time() - start
@@ -686,21 +804,20 @@ def run_one_pope_experiment(run):
             predictions.append(record)
             metadata_errors.extend(validate_metadata(run, metadata, row["question_id"]))
 
-            if sample_idx % 50 == 0 or sample_idx == len(POPE_SAMPLES):
-                print(f"  {run.run_id}: {sample_idx}/{len(POPE_SAMPLES)} samples")
+            if sample_idx % 50 == 0 or sample_idx == len(GQA_SAMPLES):
+                print(f"  {run.run_id}: {sample_idx}/{len(GQA_SAMPLES)} samples")
+                write_jsonl(prediction_path, predictions)
 
             log_file.write(json.dumps({
                 "event": "sample_done",
                 "run_id": run.run_id,
                 "sample_index": sample_idx,
                 "question_id": row["question_id"],
-                "pope_category": row["pope_category"],
                 "seconds": elapsed,
                 "retained_token_count": metadata.get("retained_token_count"),
+                "is_correct": record["is_correct"],
             }) + "\n")
             log_file.flush()
-            if sample_idx % 50 == 0:
-                write_jsonl(prediction_path, predictions)
             torch.cuda.empty_cache()
 
         log_file.write(json.dumps({
@@ -715,18 +832,21 @@ def run_one_pope_experiment(run):
         raise RuntimeError(f"{run.run_id} metadata validation failed:\n" + "\n".join(metadata_errors[:20]))
 
     write_jsonl(prediction_path, predictions)
-    metric_path, metric_rows = write_run_metric_csv(run, predictions)
+    metric_path, submission_path, metric_rows = write_run_metric_csv(run, predictions)
 
     manifest_record = {
         "run_id": run.run_id,
-        "dataset": "pope",
+        "dataset": "gqa",
         "method": run.method_label,
         "selection_method": run.selection_method,
         "retained_tokens": run.retained_tokens,
         "threshold_tau": run.threshold_tau,
         "sample_count": len(predictions),
+        "subset_seed": GQA_SUBSET_SEED,
+        "subset_file": str(SUBSET_PATH),
         "prediction_file": str(prediction_path),
         "metric_file": str(metric_path),
+        "submission_file": str(submission_path),
         "log_file": str(log_path),
         "metrics": metric_rows,
         "status": "ok",
@@ -734,22 +854,22 @@ def run_one_pope_experiment(run):
     return manifest_record
 
 
-def run_pope_main_experiments():
+def run_gqa_main_experiments():
     manifest = []
     start = time.time()
-    for index, run in enumerate(SELECTED_POPE_RUNS, start=1):
-        print(f"[{index}/{len(SELECTED_POPE_RUNS)}] {run.run_id} ({run.selection_method}, retained={run.retained_tokens})")
-        record = run_one_pope_experiment(run)
+    for index, run in enumerate(SELECTED_GQA_RUNS, start=1):
+        print(f"[{index}/{len(SELECTED_GQA_RUNS)}] {run.run_id} ({run.selection_method}, retained={run.retained_tokens})")
+        record = run_one_gqa_experiment(run)
         manifest.append(record)
         with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
         print("  ok:", record["prediction_file"])
 
-    summary_rows = write_pope_summary(manifest)
+    summary_rows = write_gqa_summary(manifest)
     print()
-    print("POPE main experiment complete.")
+    print("GQA main experiment complete.")
     print("Runs:", len(manifest))
-    print("Samples:", len(POPE_SAMPLES))
+    print("Samples:", len(GQA_SAMPLES))
     print("Output root:", OUTPUT_ROOT)
     print("Manifest:", MANIFEST_PATH)
     print("Summary rows:", len(summary_rows))
@@ -779,18 +899,18 @@ print("Loaded:", MODEL_PATH)
 print("Conversation mode:", CONV_MODE)
 print("Context length:", context_len)
 print("Max new tokens:", MAX_NEW_TOKENS)
-print("POPE sample count:", len(POPE_SAMPLES))
-print("Selected POPE run count:", len(SELECTED_POPE_RUNS))
-print("Selected run IDs:", [run.run_id for run in SELECTED_POPE_RUNS])
+print("GQA subset count:", len(GQA_SAMPLES))
+print("Selected GQA run count:", len(SELECTED_GQA_RUNS))
+print("Selected run IDs:", [run.run_id for run in SELECTED_GQA_RUNS])
 print("Load seconds:", round(time.time() - load_start, 2))
 ```
 
-Cell 6: Run selected POPE main fixed-budget experiment(s)
+Cell 6: Run selected GQA experiment
 ```python
-manifest = run_pope_main_experiments()
+manifest = run_gqa_main_experiments()
 ```
 
-Cell 7: Zip all outputs for download
+Cell 7: Zip current run outputs for download
 ```python
 import shutil
 from pathlib import Path
