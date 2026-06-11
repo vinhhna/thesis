@@ -1,0 +1,33 @@
+[
+  {
+    "run_id": "GQA-SPARSE-ORIG-128",
+    "dataset": "gqa",
+    "method": "SparseVLM-Original",
+    "selection_method": "topk",
+    "retained_tokens": 128,
+    "threshold_tau": 0.85,
+    "sample_count": 5000,
+    "subset_seed": 20260610,
+    "subset_file": "/kaggle/working/gqa_runs/GQA-SPARSE-ORIG-128/gqa_subset_seed20260610_n5000.jsonl",
+    "prediction_file": "/kaggle/working/gqa_runs/GQA-SPARSE-ORIG-128/results/gqa/predictions/gqa_sparsevlm_original_128.jsonl",
+    "metric_file": "/kaggle/working/gqa_runs/GQA-SPARSE-ORIG-128/results/gqa/gqa_sparsevlm_original_128.csv",
+    "submission_file": "/kaggle/working/gqa_runs/GQA-SPARSE-ORIG-128/results/gqa/gqa_sparsevlm_original_128_submission.json",
+    "log_file": "/kaggle/working/gqa_runs/GQA-SPARSE-ORIG-128/logs/GQA-SPARSE-ORIG-128.jsonl",
+    "metrics": [
+      {
+        "run_id": "GQA-SPARSE-ORIG-128",
+        "dataset": "GQA",
+        "method": "SparseVLM-Original",
+        "selection_method": "topk",
+        "token_setting": 128,
+        "threshold_tau": "",
+        "sample_count": 5000,
+        "subset_seed": 20260610,
+        "accuracy": 0.6608,
+        "correct": 3304,
+        "total": 5000
+      }
+    ],
+    "status": "ok"
+  }
+]

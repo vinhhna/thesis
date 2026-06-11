@@ -4,7 +4,7 @@ These cells run GQA experiments from `evaluation_protocol_updated.md`.
 
 Kaggle should run one method per session. Change `RUN_IDS_TO_RUN` in Cell 4 to the next run ID, then run the notebook. Each run writes to a run-specific output directory and creates one zip file for download.
 
-This notebook uses a deterministic 1500-sample GQA validation subset. The subset is selected once per run from the same question file using a fixed seed, so every method sees the same questions.
+This notebook uses a deterministic 5000-sample GQA validation subset. The subset is selected once per run from the same question file using a fixed seed, so every method sees the same questions.
 
 Important dataset note: the local GQA package currently contains images and `val_choices.json`, but the actual question file is required for inference. The notebook first looks for `val_balanced_questions.json` or `val_all_questions.json` in the Kaggle input. If it cannot find one, it tries to download `questions1.2.zip` from the official GQA release into `/kaggle/working`. If Kaggle internet is disabled, upload the GQA questions file as part of the Kaggle Dataset.
 
@@ -223,7 +223,7 @@ CANDIDATE_POOL_FACTOR = 2
 DEFAULT_THRESHOLD_TAU = 0.85
 SPARSE_PRUNING_LOC = [2, 6, 15]
 
-GQA_SUBSET_SIZE = 1500
+GQA_SUBSET_SIZE = 5000
 GQA_SUBSET_SEED = 20260610
 GQA_SHORT_ANSWER_SUFFIX = "\nAnswer the question using a single word or phrase."
 GQA_DOWNLOAD_QUESTIONS_IF_MISSING = True

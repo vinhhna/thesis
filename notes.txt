@@ -406,3 +406,10 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
     + threshold-adaptive tau=0.80 | variable, avg 33.2 | 0.8240 | 0.8335 | 0.8012 | 0.8686
     + threshold-adaptive tau=0.85 | variable, avg 33.6 | 0.8340 | 0.8415 | 0.8160 | 0.8686
     + threshold-adaptive tau=0.90 | variable, avg 34.1 | 0.8353 | 0.8432 | 0.8157 | 0.8725
+- Results of GQA dataset:
+    + method | tokens | accuracy | correct | total | subset seed | run time
+    + original | 128 | 0.6608 | 3304 | 5000 | 20260610 | 60m 56s
+    + original | 64 | 0.6062 | 3031 | 5000 | 20260610 | 48m 49s
+    + ours | 64 | 0.6248 | 3124 | 5000 | 20260610 | 51m 13s
+    + threshold-fixed | 64 | 0.6320 | 3160 | 5000 | 20260610 | 51m 19s
+
