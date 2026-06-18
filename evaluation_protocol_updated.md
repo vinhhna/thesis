@@ -23,12 +23,12 @@ For POPE, report both Accuracy and F1. Other printed POPE values such as Precisi
 
 | Run ID | Dataset | Method | Token setting | Metric | Prediction file | Output file | Notes | Checklist |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GQA-DENSE-576 | GQA | Dense / Vanilla | 576 | Official GQA accuracy | `results/gqa/predictions/gqa_dense_576.jsonl` | `results/gqa/gqa_dense_576.csv` | Full-token reference setting. | [ ] |
+| GQA-DENSE-576 | GQA | Dense / Vanilla | 576 | Official GQA accuracy | `results/gqa/predictions/gqa_dense_576.jsonl` | `results/gqa/gqa_dense_576.csv` | Full-token reference setting. | [x] |
 | GQA-SPARSE-ORIG-128 | GQA | SparseVLM-Original | 128 | Official GQA accuracy | `results/gqa/predictions/gqa_sparsevlm_original_128.jsonl` | `results/gqa/gqa_sparsevlm_original_128.csv` | Main SparseVLM baseline at the practical sparse setting. | [x] |
 | GQA-SPARSE-ORIG-64 | GQA | SparseVLM-Original | 64 | Official GQA accuracy | `results/gqa/predictions/gqa_sparsevlm_original_64.jsonl` | `results/gqa/gqa_sparsevlm_original_64.csv` | Main SparseVLM baseline at the aggressive sparse setting. | [x] |
-| GQA-OURS-128 | GQA | Ours | 128 | Official GQA accuracy | `results/gqa/predictions/gqa_ours_128.jsonl` | `results/gqa/gqa_ours_128.csv` | Tests whether the proposed selection method preserves reasoning evidence better than SparseVLM-Original. | [ ] |
+| GQA-OURS-128 | GQA | Ours | 128 | Official GQA accuracy | `results/gqa/predictions/gqa_ours_128.jsonl` | `results/gqa/gqa_ours_128.csv` | Tests whether the proposed selection method preserves reasoning evidence better than SparseVLM-Original. | [x] |
 | GQA-OURS-64 | GQA | Ours | 64 | Official GQA accuracy | `results/gqa/predictions/gqa_ours_64.jsonl` | `results/gqa/gqa_ours_64.csv` | Main stress test for the proposed method under strong sparsification. | [x] |
-| GQA-THRESHOLD-FIXED-128 | GQA | Threshold-Fixed-k | 128 | Official GQA accuracy | `results/gqa/predictions/gqa_threshold_fixed_128.jsonl` | `results/gqa/gqa_threshold_fixed_128.csv` | Simpler redundancy-aware baseline with the same token budget as Ours-128. | [ ] |
+| GQA-THRESHOLD-FIXED-128 | GQA | Threshold-Fixed-k | 128 | Official GQA accuracy | `results/gqa/predictions/gqa_threshold_fixed_128.jsonl` | `results/gqa/gqa_threshold_fixed_128.csv` | Simpler redundancy-aware baseline with the same token budget as Ours-128. | [x] |
 | GQA-THRESHOLD-FIXED-64 | GQA | Threshold-Fixed-k | 64 | Official GQA accuracy | `results/gqa/predictions/gqa_threshold_fixed_64.jsonl` | `results/gqa/gqa_threshold_fixed_64.csv` | Simpler redundancy-aware baseline with the same token budget as Ours-64. | [x] |
 | POPE-DENSE-576 | POPE | Dense / Vanilla | 576 | POPE Accuracy and F1 | `results/pope/predictions/pope_dense_576.jsonl` | `results/pope/pope_dense_576.csv` | Full-token reference for hallucination evaluation. | [ ] |
 | POPE-SPARSE-ORIG-128 | POPE | SparseVLM-Original | 128 | POPE Accuracy and F1 | `results/pope/predictions/pope_sparsevlm_original_128.jsonl` | `results/pope/pope_sparsevlm_original_128.csv` | Checks hallucination behavior of the original SparseVLM selection method. | [ ] |

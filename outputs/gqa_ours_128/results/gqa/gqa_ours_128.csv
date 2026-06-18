@@ -1,0 +1,2 @@
+accuracy,correct,dataset,method,run_id,sample_count,selection_method,subset_seed,threshold_tau,token_setting,total
+0.6762,3381,GQA,Ours,GQA-OURS-128,5000,mmr,20260610,,128,5000
