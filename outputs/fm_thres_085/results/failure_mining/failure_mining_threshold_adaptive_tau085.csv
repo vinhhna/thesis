@@ -1,0 +1,24 @@
+run_id,dataset,method,selection_method,token_setting,threshold_tau,scope,scope_value,sample_count,accuracy,correct,incorrect,correct_count,binary_mismatch_count,open_answer_mismatch_count,empty_answer_count,average_retained_tokens,min_retained_tokens,max_retained_tokens
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,overall,all,100,0.73,73,27,73,4,23,0,33.61,31,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,dataset,GQA-val-balanced,70,0.7714285714285715,54,16,54,2,14,0,33.57142857142857,31,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,dataset,TextVQA-val,10,0.5,5,5,5,0,5,0,33.7,33,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,dataset,VQAv2-val,20,0.7,14,6,14,2,4,0,33.7,32,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,are these,1,1.0,1,0,1,0,0,0,33.0,33,33
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,attr,14,0.8571428571428571,12,2,12,0,2,0,33.642857142857146,31,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,cat,14,0.5714285714285714,8,6,8,0,6,0,33.5,32,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,do you,1,1.0,1,0,1,0,0,0,34.0,34,34
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,does the,1,0.0,0,1,0,1,0,0,34.0,34,34
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,global,14,0.7857142857142857,11,3,11,0,3,0,33.57142857142857,32,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,has,1,0.0,0,1,0,1,0,0,33.0,33,33
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,how many,6,0.8333333333333334,5,1,5,0,1,0,33.5,32,34
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,is there,1,1.0,1,0,1,0,0,0,35.0,35,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,is there a,1,1.0,1,0,1,0,0,0,33.0,33,33
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,none of the above,1,1.0,1,0,1,0,0,0,34.0,34,34
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,obj,14,0.9285714285714286,13,1,13,1,0,0,33.785714285714285,31,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,ocr,10,0.5,5,5,5,0,5,0,33.7,33,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,rel,14,0.7142857142857143,10,4,10,1,3,0,33.357142857142854,32,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,what,1,1.0,1,0,1,0,0,0,35.0,35,35
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,what color,1,1.0,1,0,1,0,0,0,33.0,33,33
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,what color is the,1,0.0,0,1,0,0,1,0,34.0,34,34
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,what is,1,0.0,0,1,0,0,1,0,34.0,34,34
+FM-THRESHOLD-ADAPT-085,Failure-mining,Threshold-Adaptive,threshold_adaptive,64,0.85,question_type,what is the,3,0.6666666666666666,2,1,2,0,1,0,33.666666666666664,33,35

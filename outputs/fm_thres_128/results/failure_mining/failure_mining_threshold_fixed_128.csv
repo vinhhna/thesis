@@ -1,0 +1,24 @@
+run_id,dataset,method,selection_method,token_setting,threshold_tau,scope,scope_value,sample_count,accuracy,correct,incorrect,correct_count,binary_mismatch_count,open_answer_mismatch_count,empty_answer_count,average_retained_tokens,min_retained_tokens,max_retained_tokens
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,overall,all,100,0.74,74,26,74,6,20,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,dataset,GQA-val-balanced,70,0.7857142857142857,55,15,55,4,11,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,dataset,TextVQA-val,10,0.5,5,5,5,0,5,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,dataset,VQAv2-val,20,0.7,14,6,14,2,4,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,are these,1,1.0,1,0,1,0,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,attr,14,0.8571428571428571,12,2,12,0,2,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,cat,14,0.7142857142857143,10,4,10,0,4,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,do you,1,1.0,1,0,1,0,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,does the,1,0.0,0,1,0,1,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,global,14,0.7857142857142857,11,3,11,0,3,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,has,1,0.0,0,1,0,1,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,how many,6,0.8333333333333334,5,1,5,0,1,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,is there,1,1.0,1,0,1,0,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,is there a,1,1.0,1,0,1,0,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,none of the above,1,1.0,1,0,1,0,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,obj,14,0.7857142857142857,11,3,11,3,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,ocr,10,0.5,5,5,5,0,5,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,rel,14,0.7857142857142857,11,3,11,1,2,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,what,1,1.0,1,0,1,0,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,what color,1,1.0,1,0,1,0,0,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,what color is the,1,0.0,0,1,0,0,1,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,what is,1,0.0,0,1,0,0,1,0,39.0,39,39
+FM-THRESHOLD-FIXED-128,Failure-mining,Threshold-Fixed-k,threshold_fixed,128,,question_type,what is the,3,0.6666666666666666,2,1,2,0,1,0,39.0,39,39

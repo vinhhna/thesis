@@ -418,4 +418,16 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
     + threshold-adaptive tau=0.80 | variable, avg 33.2 (min 25, max 35) | 0.6284 | 3142 | 5000 | 20260610 | 52m 15s
     + threshold-adaptive tau=0.85 | variable, avg 33.7 (min 29, max 35) | 0.6368 | 3184 | 5000 | 20260610 | 52m 20s
     + threshold-adaptive tau=0.90 | variable, avg 34.1 (min 30, max 35) | 0.6406 | 3203 | 5000 | 20260610 | 53m 31s
+- Results of failure-mining dataset:
+    + method | tokens | accuracy | correct | binary mismatch | open mismatch | recovered baseline failures | regressions | run time
+    + dense | 576 | 0.7800 | 78/100 | 4 | 18 | n/a | n/a | 2m 40s
+    + original | 128 (final 39) | 0.7900 | 79/100 | 2 | 19 | baseline | baseline | 1m 12s
+    + ours | 128 (final 39) | 0.7900 | 79/100 | 4 | 17 | 2/21 (9.5%) | 2 | 1m 30s
+    + threshold-fixed | 128 (final 39) | 0.7400 | 74/100 | 6 | 20 | 2/21 (9.5%) | 7 | 1m 19s
+    + original | 64 (final 18) | 0.7000 | 70/100 | 6 | 24 | baseline | baseline | 0m 59s
+    + ours | 64 (final 18) | 0.7500 | 75/100 | 4 | 21 | 10/30 (33.3%) | 5 | 1m 02s
+    + threshold-fixed | 64 (final 18) | 0.7000 | 70/100 | 5 | 25 | 7/30 (23.3%) | 7 | 1m 00s
+    + threshold-adaptive tau=0.80 | variable, avg 33.2 (min 28, max 35) | 0.7500 | 75/100 | 4 | 21 | 9/30 (30.0%) | 4 | 1m 03s
+    + threshold-adaptive tau=0.85 | variable, avg 33.6 (min 31, max 35) | 0.7300 | 73/100 | 4 | 23 | 9/30 (30.0%) | 6 | 1m 03s
+    + threshold-adaptive tau=0.90 | variable, avg 34.0 (min 31, max 35) | 0.7500 | 75/100 | 4 | 21 | 9/30 (30.0%) | 4 | 1m 03s
 
