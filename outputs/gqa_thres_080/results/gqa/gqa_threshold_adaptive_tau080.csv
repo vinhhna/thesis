@@ -1,0 +1,2 @@
+accuracy,correct,dataset,method,run_id,sample_count,selection_method,subset_seed,threshold_tau,token_setting,total
+0.6284,3142,GQA,Threshold-Adaptive,GQA-THRESHOLD-ADAPT-080,5000,threshold_adaptive,20260610,0.8,64,5000

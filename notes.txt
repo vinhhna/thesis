@@ -415,4 +415,7 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
     + original | 64 | 0.6062 | 3031 | 5000 | 20260610 | 48m 49s
     + ours | 64 | 0.6248 | 3124 | 5000 | 20260610 | 51m 13s
     + threshold-fixed | 64 | 0.6320 | 3160 | 5000 | 20260610 | 51m 19s
+    + threshold-adaptive tau=0.80 | variable, avg 33.2 (min 25, max 35) | 0.6284 | 3142 | 5000 | 20260610 | 52m 15s
+    + threshold-adaptive tau=0.85 | variable, avg 33.7 (min 29, max 35) | 0.6368 | 3184 | 5000 | 20260610 | 52m 20s
+    + threshold-adaptive tau=0.90 | variable, avg 34.1 (min 30, max 35) | 0.6406 | 3203 | 5000 | 20260610 | 53m 31s
 
