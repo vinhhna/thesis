@@ -1,0 +1,8 @@
+dataset,run_id,method,selection_method,token_setting,sample_count,official_gqa_accuracy,correct,total,subset_seed,average_retained_tokens,min_retained_tokens,max_retained_tokens,prediction_file
+GQA,GQA-DENSE-576,Dense / Vanilla,dense,576,5000,0.7148,3574,5000,20260610,576.0,576,576,outputs/raw_results/gqa_dense/results/gqa/predictions/gqa_dense_576.jsonl
+GQA,GQA-SPARSE-ORIG-128,SparseVLM-Original,topk,128,5000,0.6608,3304,5000,20260610,39.0,39,39,outputs/raw_results/gqa_sparse_128/results/gqa/predictions/gqa_sparsevlm_original_128.jsonl
+GQA,GQA-SPARSE-ORIG-64,SparseVLM-Original,topk,64,5000,0.6062,3031,5000,20260610,18.0,18,18,outputs/raw_results/gqa_sparse_64/results/gqa/predictions/gqa_sparsevlm_original_64.jsonl
+GQA,GQA-OURS-128,Ours,mmr,128,5000,0.6762,3381,5000,20260610,39.0,39,39,outputs/raw_results/gqa_ours_128/results/gqa/predictions/gqa_ours_128.jsonl
+GQA,GQA-OURS-64,Ours,mmr,64,5000,0.6248,3124,5000,20260610,18.0,18,18,outputs/raw_results/gqa_ours_64/results/gqa/predictions/gqa_ours_64.jsonl
+GQA,GQA-THRESHOLD-FIXED-128,Threshold-Fixed-k,threshold_fixed,128,5000,0.681,3405,5000,20260610,39.0,39,39,outputs/raw_results/gqa_thres_128/results/gqa/predictions/gqa_threshold_fixed_128.jsonl
+GQA,GQA-THRESHOLD-FIXED-64,Threshold-Fixed-k,threshold_fixed,64,5000,0.632,3160,5000,20260610,18.0,18,18,outputs/raw_results/gqa_thres_64/results/gqa/predictions/gqa_threshold_fixed_64.jsonl

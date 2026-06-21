@@ -69,11 +69,11 @@ After running the experiments, prepare these summary files:
 
 | Summary | Purpose | Output file | Checklist |
 | --- | --- | --- | --- |
-| GQA benchmark summary | Compare official GQA accuracy across Dense / Vanilla, SparseVLM-Original, Ours, and Threshold-Fixed-k under 128-token and 64-token settings. | `results/summary/gqa_summary.csv` | [ ] |
-| POPE benchmark summary | Compare POPE Accuracy and F1 across Dense / Vanilla, SparseVLM-Original, Ours, and Threshold-Fixed-k under 128-token and 64-token settings. | `results/summary/pope_summary.csv` | [ ] |
-| Failure-mining summary | Compare correctness, recovery cases, and qualitative failure categories across Dense / Vanilla, SparseVLM-Original, Ours, and Threshold-Fixed-k. | `results/summary/failure_mining_summary.csv` | [ ] |
-| Adaptive threshold summary | Compare Threshold-Adaptive at tau=0.80, tau=0.85, and tau=0.90 against Ours-64 and Ours-128 using both performance and retained-token statistics. | `results/summary/adaptive_threshold_summary.csv` | [ ] |
-| Final thesis table | Combined table containing the main reported numbers for GQA, POPE, failure mining, and adaptive threshold trade-off analysis. | `results/summary/final_evaluation_table.csv` | [ ] |
+| GQA benchmark summary | Compare official GQA accuracy across Dense / Vanilla, SparseVLM-Original, Ours, and Threshold-Fixed-k under 128-token and 64-token settings. | `outputs/summary/gqa_summary.csv` | [x] |
+| POPE benchmark summary | Compare POPE Accuracy and F1 across Dense / Vanilla, SparseVLM-Original, Ours, and Threshold-Fixed-k under 128-token and 64-token settings. | `outputs/summary/pope_summary.csv` | [x] |
+| Failure-mining summary | Compare correctness, recovery cases, and qualitative failure categories across Dense / Vanilla, SparseVLM-Original, Ours, and Threshold-Fixed-k. | `outputs/summary/failure_mining_summary.csv` | [x] |
+| Adaptive threshold summary | Compare Threshold-Adaptive at tau=0.80, tau=0.85, and tau=0.90 against Ours-64 and Ours-128 using both performance and retained-token statistics. | `outputs/summary/adaptive_threshold_summary.csv` | [x] |
+| Final thesis table | Combined table containing the main reported numbers for GQA, POPE, failure mining, and adaptive threshold trade-off analysis. | `outputs/summary/final_evaluation_table.csv` | [x] |
 
 ## Reproduction Rules
 
