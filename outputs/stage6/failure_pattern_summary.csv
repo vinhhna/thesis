@@ -1,0 +1,13 @@
+scope,category,count,notes
+full_set,original_64_failures,30,All cases where SparseVLM-Original-64 is incorrect.
+full_set,ours_only_recovery,3,Only Ours-64 recovers the case.
+full_set,ours_and_threshold_recovery,7,Both Ours-64 and Threshold-Fixed-64 recover the case.
+full_set,threshold_only_recovery,0,Only Threshold-Fixed-64 recovers the case.
+full_set,unresolved_by_both,20,Neither Ours-64 nor Threshold-Fixed-64 recovers the case.
+curated,selected_cases,8,Manually interpreted cases in failure_pattern_cases.csv.
+curated,missed_relevant_visual_evidence,8,Selected cases provisionally attributed to missing required evidence.
+curated,redundant_or_dominant_region_selection,0,This label remains provisional until independently verified.
+curated,provisional_redundancy_cases_awaiting_verification,0,Requires Stage 7 visualization or similarity analysis.
+curated,recovery_cases,8,Curated cases recovered by Ours or Threshold-Fixed.
+curated,limitation_cases,0,Curated cases unresolved by both sparse alternatives.
+visualization,high_priority_cases,5,Cases written to visualization_cases.txt.

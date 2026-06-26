@@ -431,3 +431,135 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
     + threshold-adaptive tau=0.85 | variable, avg 33.6 (min 31, max 35) | 0.7300 | 73/100 | 4 | 23 | 9/30 (30.0%) | 6 | 1m 03s
     + threshold-adaptive tau=0.90 | variable, avg 34.0 (min 31, max 35) | 0.7500 | 75/100 | 4 | 21 | 9/30 (30.0%) | 4 | 1m 03s
 
+- Qualitative check after runs:
+    + no problems with any datasets.
+    + no errors or missing values anywhere.
+    + some answers are "none" (3 of everything) and they are all counted as wrong, not missing.
+    + every run metric was accurately recomputed from its manifest-selected prediction jsonl file.
+    + correct metadata and token settings for each run
+
+- Results understanding:
+    + the gqa table answers that: under euqal token budgets, how well does each token-selection method preserve visual reasoning accuracy.
+    + the pope table answers that how does each method affect object grounding and hallucination under visual-token pruning.
+    + the failure-mining table answers which targeted failures of sparsevlm are recovered by ours or threshold filtering methods, what failure types remain, and how many regressions each method introduces.
+    + the adaptive-threshold table answers what accuracy-efficiency trade-off occurs when threshold filtering dynamically determines the retained token count at different tau values.
+    + each summary row includes its run_id and prediction_file.
+        . therefore, every number can be traced to an original prediction file.
+    + pope reports both accuracy and f1 score.
+        . the original paper only reports the f1 score of pope, as shown in the original code.
+    + new metric: recovery rate = cases where sparsevlm is wrong and we are correct / total wrong sparsevlm cases.
+
+- Results analysis:
+    + ours show a signigicant improvement compared to sparsevlm, especially at the 64 setting and on failure_mining_set.
+    + however, ours does not dominate threshold-fixed on the main benchmarks.
+        . threshold-fixed is strong enough and yields even better results on gqa and pope-64.
+        . therefore, our method showed significant improvement to sparsevlm under the same token settings, especially when the token budget is lower. comparing to threshold-fixed, ours is not always dominant on all benchmarks, but it is better on the failure_mining_set, showing greater advantage on specific fail cases.
+    + on gqa dataset:
+        . ours score 1.54% higher with the 128-token setting, and 1.86% higher with the 64-token setting.
+            . this shows that ours help retaining visual tokens better than original top-k.
+        . threshold-fixed is better than ours in gqa at both settings.
+            . this proves that a simpler heuristic based on similarity threshold is also effective for visual reasoning.
+- On GQA, the proposed method consistently improves over SparseVLM-Original at both 128-token and 64-token settings. However, Threshold-Fixed achieves the highest sparse performance, indicating that simple redundancy filtering is already a strong baseline for this benchmark.
+    + on pope dataset:
+        . at 128-token, ours is almost equal to sparsevlm's results about accuracy, but f1 score is 0.28% higher.
+        . at 64-token, ours showed clear increases in both accuracy and f1.
+    + pope is a benchmark about object hallucination. the results mean:
+        . at setting 128, sparsevlm is already decent, ours does not improve much.
+        . at setting 64, the strong settings harms sparsevlm's results, but ours can maintain a better performance.
+        . threshold-fixed is the best method for pope-64.
+    + important caveat: ours help decrease false negatives, bringing recall from 84.23% to 88.57%.
+        . this matches the target of maintaining important visual signals.
+        . however false positives did not change, so it means that our method improves by increasing recall, not by reducing hallucinaion.
+- On POPE, Ours provides a clear benefit under the aggressive 64-token setting, improving both Accuracy and F1 over SparseVLM-Original. The improvement mainly comes from better recall, suggesting that the proposed selection method helps preserve object evidence that would otherwise be lost under strong sparsification. However, Threshold-Fixed performs best at 64 tokens, showing that simple similarity-based filtering is particularly competitive for object-level hallucination evaluation.
+    + on failure mining dataset:
+        . at 64-token, ours receive +5% in change, proving that it is capable of mitigating the weakness of sparsevlm.
+        . ours-64 is able to recover 10/30 errors from sparsevlm, giving the recovery rate of 33.33%, while only making 5 regressions. net gain is +5 cases.
+            . on the other hand, threshold-fixed could fix 7 cases but failed 7 cases, so net gain is zero.
+- In the failure-mining set, Ours shows its strongest advantage under the 64-token setting. It recovers 10 out of 30 SparseVLM-Original failures while introducing only 5 regressions, improving correctness from 70% to 75%. In contrast, Threshold-Fixed recovers 7 failures but also introduces 7 regressions, resulting in no net improvement. This suggests that the proposed method is more effective than a simple threshold heuristic for the targeted failure cases considered in this thesis.
+    + threshold-adaptive:
+        . better than ours-64 on gqa, but using an average of 33-34 tokens, which is closer to ours-128 (39) than ours-64 (18). the performance is still far from ours-128.
+        . on pope, threshold-adaptive does not provide a clearly better trade-off than ours. it uses substantially more tokens than ours-64 while achieving only a small improvement.
+        . on the failure-mining set, threshold-adaptive does not outperform ours-64 despite using more retained tokens on average.
+            . this supports the view that simply allowing a threshold heuristic to keep more non-redundant tokens is not enough to outperform the proposed method on targeted failure cases.
+    + tau analysis:
+        . tau increases means loosening the filtering process, which means keeping more tokens.
+        . on gqa and pope, keeping more token helps maintaining the good performance.
+        . on failure analysis it's not the same, possibly because it only has 100 cases.
+
+- Final judgement:
+    + our thesis name is: Optimizing the information choice in multimodal systems to reduce redundancy and improve efficiency
+    + the first claim: ours improves performance compared to sparsevlm
+        . the proposed method consistently improves over sparsevlm under aggressive sparsification and provides moderate gains on gqa at both token settings.
+    + the second claim: ours is better at reducing redundancy
+        . missing info: pairwise similarity of selected tokens, spatial coverage, overlap between ours and threshold-fixed, visualization of selected tokens.
+    + the third claim: ours improve overall efficiency to all methods
+        . ours improves over the original sparsevlm baseline, especially under the 64-token setting. however, the gains are moderate on official benchmarks, and threshold-fixed remains a competitive baseline.
+    + the fourth claim: ours is better at recovering failure cases
+        . strongest argument
+        . the strongest evidence for the proposed method comes from the failure-mining set. under the 64-token setting, ours recovers more sparsevlm failures and introduces fewer regressions than threshold-fixed, indicating that the proposed method is more effective for the targeted error pattern.
+
+- Needed to do before next step:
+    + calculate overlap@k and jaccard overlap
+    + calculate for ours-64 and threshold-fixed-64; ours-128 and threshold-fixed-128
+    + calculate pairwise similarity, spatial coverage, overlap with threshold to prove redundancy reduction
+    + create case-level failure analysis
+
+- Failure analysis:
+    + purpose of this step:
+        . this is the failure-driven analysis, not the official benchmark evaluation.
+        . it helps explain which errors were corrected or why the selection method may have helped, which is an improvement over benchmark tables.
+            . in other words, it asks what kinds of sparsevlm failure failures does ours recover, and are they plausibly related to losing relevant visual evidence during pruning.
+        . we focus on 64 rather than 128 tokens because ours shows its strongst improvement over sparsevlm at 64.
+        . this stage investigates the possible error mechanism, rather than validating their numerical correctness.
+        . this stage should lead to a conclusion: ours is especially useful for recovering some agressive-pruning failures involving potentially missed, localized, relational, peripheral, or distributed visual evidence.
+    + data generation process
+        . primary inputs of this stage: four prediction jsonl files for each of the algorithm, resolved through their manifests
+        . when generating data for the visualization step, we are retaining the final selected original-patch indices because they connect model outputs to the surviving image patches, enable later token-selection visualizations and spatial analysis.
+        . two files: failure_pattern_review.csv as a working inventory, and failure_pattern_cases.csv for the manually selected and fully explained cases.
+        . regenerated output are deterministic.
+    + statistics:
+        . original-64 incorrect cases: 30
+        . recovered by ours-64: 10
+        . recovered by threshold-64: 7
+        . recovered only by ours: 3
+        . recovered only by threshold: 0
+        . unresolved by both: 20
+        . ours-only group becomes important because it identifies cases where mmr succeeds, but the simpler threshold method does not, helping distinguish the proposed method's behaviour.
+        . unresolved group remains valuable because it shows the limitations of redundancy-aware selection and identifies errors that token selection alone may not solve.
+    + creation of the 8-cases table:
+        . there are 10 recoveries, but two cases had unclear or ambiguous mechanisms, so including them would require speculative explanations.
+        . a case is defensible when it has identifiable required evidence, a clear prediction difference, and a plausible connection to missing visual evidence.
+            . cases with ambiguous ground truth, unclear visual evidence, or no credible link between token selection and recovery are excluded, even if our algorithms succesfully recovered it.
+        . the main failure type classified is missed_relevant_visual_evidence.
+        . all labels are provisional means that the explanation is a reasonable hypothesis that still requires verification.
+        . the cases were manually selected for interpretability rather than sampled randomly from the full dataset.
+    + failure types:
+        . we only select 1-2 central labels, because we want to keep a narrower taxonomy to keep the analysis focused on failure pattern directly related to the thesis, instead of covering general vlm errors.
+        . missed_relevant_visual_evidence is the only failure type sufficiently supported by manual inspection of the curated recoveries.
+            . this label means sparsevlm may not retain enough visual evidence needed to answer the question under aggressive pruning.
+            . it describes cases where small, peripheral, overlapping, relational, or distributed evidence may be lost or underrepresented.
+        . there are no redundancy labels assigned, because image inspection and patch indices alone did not clearly demonstrate excessive concentration or feature redundancy.
+            . redundancy can be evaluated in stage 7 and lated selected-token analysis.
+    + prominent patterns:
+        . there exists small-object cases, attribute cases, relational cases, and overlapping-object cases.
+            . their required evidence is relatively localizable, allowing token overlays to test whether each method covers the relevant regions.
+    + roles of models:
+        . dense is a full-token reference for checking whether the image contains sufficient evidence without sparse pruning.
+            . it is not an absolute upper bound because keeping all tokens does not guarantee a correct answer, as errors can still occur via generation, reasoning, or vlm problems.
+            . for a case where dense is wrong and ours is correct, we should interpret that it is not a strong proof that pruning alone caused or solved the error.
+        . threshold-64 is a controlled, fixed-budget redundancy-aware baseline using the same pruning schedule.
+            . it tests whether improvements require mmr or can also be achieved with a simpler similarity-threshold strategy.
+            . ours method is not always better - it is only better in the failure mining set, but on official benchmarks, threshold performs better.
+        . the 3 ours-only recoveries are important because they identify cases where mmr succeeds, but the simpler threshold rule does not, helping distinguishing ours' behaviour.
+
+- Visualization stage:
+    + checks whether the explanations in previous stage is supported or not, especially missed_relevant_visual_evidence.
+    + we chose the cases where there were recoveries from original model, then drew overlays of chosen patches alongside some lightweight metrics.
+    + the results is that all cases are unclear.
+        . it is unclear from the visualization results to conclude that selected patches really contributes to our findings.
+        . even the failure-mining dataset or the full datasets, we haven't found any significant cases of that.
+    + conclusion:
+        . stage 7 does not strongly support that missed_relevant_visual_evidence mechanism applies to most use cases.
+        . in more details: while stage 6 shows that ours show answer-level recovery, stage 7 only verify it in a very few number of cases.
+            . most of the recovery cases are unclear.
+

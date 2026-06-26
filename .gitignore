@@ -17,3 +17,8 @@ data/kaggle_datasets/
 pope_main_results_download/
 *_results_download/
 *_results_download.zip
+
+# Obsolete/intermediate visualization exports; final Stage 7 artifacts live in outputs/stage7/.
+outputs/stage7_expanded/
+outputs/stage7_sparsevlm_style/
+outputs/*.zip

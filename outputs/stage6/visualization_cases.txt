@@ -1,0 +1,7 @@
+# Stage 7 visualization candidates
+# case_id	failure_type	evidence_needed
+GQA_VAL_010	missed_relevant_visual_evidence	The keyboard or keyboard-like device beside the bag/laptop sleeve in the lower foreground.
+GQA_VAL_028	missed_relevant_visual_evidence	The small tie and its color on the right-side person.
+GQA_VAL_029	missed_relevant_visual_evidence	Partially visible chair structure near the lower or side boundaries of the image.
+VQAV2_VAL_013	missed_relevant_visual_evidence	Distinct head, body, and tusk evidence for both overlapping elephants.
+VQAV2_VAL_015	missed_relevant_visual_evidence	The camera in the person's hands and its orientation toward the sheep.
