@@ -120,6 +120,8 @@ class LlamaDynamicvitModel(LlamaModel):
         selection_method = "mmr",
         threshold_tau = 0.85,
         candidate_pool_factor = 2,
+        lambda_relevance = 0.8,
+        record_selection_similarity = False,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -209,6 +211,8 @@ class LlamaDynamicvitModel(LlamaModel):
                 "retained_tokens": int(retained_tokens),
                 "threshold_tau": float(threshold_tau),
                 "candidate_pool_factor": int(candidate_pool_factor),
+                "lambda_relevance": float(lambda_relevance),
+                "record_selection_similarity": bool(record_selection_similarity),
                 "layer_token_stats": [],
                 "retained_token_count": None,
                 "selected_token_indices": [],
@@ -298,6 +302,8 @@ class LlamaDynamicvitModel(LlamaModel):
                         retained_tokens,
                         threshold_tau=threshold_tau,
                         candidate_pool_factor=candidate_pool_factor,
+                        lambda_relevance=lambda_relevance,
+                        record_selection_similarity=record_selection_similarity,
                     ) # B, L_v
                     selected_local_indices = selection_stats.get("selected_token_indices", [[]])
                     selected_local_indices = selected_local_indices[0] if len(selected_local_indices) > 0 else []
@@ -1069,6 +1075,8 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
         selection_method = "mmr",
         threshold_tau = 0.85,
         candidate_pool_factor = 2,
+        lambda_relevance = 0.8,
+        record_selection_similarity = False,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1094,6 +1102,8 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
             selection_method = selection_method,
             threshold_tau = threshold_tau,
             candidate_pool_factor = candidate_pool_factor,
+            lambda_relevance = lambda_relevance,
+            record_selection_similarity = record_selection_similarity,
         )
 
         prev_decision = outputs[0]
@@ -1155,6 +1165,8 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
         selection_method = "mmr",
         threshold_tau = 0.85,
         candidate_pool_factor = 2,
+        lambda_relevance = 0.8,
+        record_selection_similarity = False,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         if synced_gpus is None:
@@ -1379,6 +1391,8 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
                 selection_method = selection_method,
                 threshold_tau = threshold_tau,
                 candidate_pool_factor = candidate_pool_factor,
+                lambda_relevance = lambda_relevance,
+                record_selection_similarity = record_selection_similarity,
                 **model_kwargs,
             )
 
@@ -1625,6 +1639,8 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
         selection_method = "mmr",
         threshold_tau = 0.85,
         candidate_pool_factor = 2,
+        lambda_relevance = 0.8,
+        record_selection_similarity = False,
         **model_kwargs,
     ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
         r"""
@@ -1797,6 +1813,8 @@ class LlamaDynamicvitForCausalLM(LlamaForCausalLM):
                 selection_method = selection_method,
                 threshold_tau = threshold_tau,
                 candidate_pool_factor = candidate_pool_factor,
+                lambda_relevance = lambda_relevance,
+                record_selection_similarity = record_selection_similarity,
             )
             outputs = outputs[2]
             if synced_gpus and this_peer_finished:

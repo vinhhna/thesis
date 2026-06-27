@@ -65,6 +65,8 @@ class LlavaLlamaDynamicForCausalLM(LlamaDynamicvitForCausalLM, LlavaMetaForCausa
         selection_method = "mmr",
         threshold_tau = 0.85,
         candidate_pool_factor = 2,
+        lambda_relevance = 0.8,
+        record_selection_similarity = False,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
 
         if inputs_embeds is None:
@@ -106,6 +108,8 @@ class LlavaLlamaDynamicForCausalLM(LlamaDynamicvitForCausalLM, LlavaMetaForCausa
             selection_method=selection_method,
             threshold_tau=threshold_tau,
             candidate_pool_factor=candidate_pool_factor,
+            lambda_relevance=lambda_relevance,
+            record_selection_similarity=record_selection_similarity,
         )
 
     @torch.no_grad()
@@ -118,6 +122,8 @@ class LlavaLlamaDynamicForCausalLM(LlamaDynamicvitForCausalLM, LlavaMetaForCausa
         selection_method = "mmr",
         threshold_tau = 0.85,
         candidate_pool_factor = 2,
+        lambda_relevance = 0.8,
+        record_selection_similarity = False,
         image_shape=576,
         token_length_list = [],
         pre_prompt_length_list = [],
@@ -162,6 +168,8 @@ class LlavaLlamaDynamicForCausalLM(LlamaDynamicvitForCausalLM, LlavaMetaForCausa
             selection_method = selection_method,
             threshold_tau = threshold_tau,
             candidate_pool_factor = candidate_pool_factor,
+            lambda_relevance = lambda_relevance,
+            record_selection_similarity = record_selection_similarity,
             **kwargs
         )
 

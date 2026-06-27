@@ -554,12 +554,33 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
 
 - Visualization stage:
     + checks whether the explanations in previous stage is supported or not, especially missed_relevant_visual_evidence.
-    + we chose the cases where there were recoveries from original model, then drew overlays of chosen patches alongside some lightweight metrics.
-    + the results is that all cases are unclear.
+    + we chose the cases where there were recoveries from original model, then drew overlays of chosen patches alongside some additional data.
+    + the results is that most of the cases are unclear.
         . it is unclear from the visualization results to conclude that selected patches really contributes to our findings.
         . even the failure-mining dataset or the full datasets, we haven't found any significant cases of that.
     + conclusion:
         . stage 7 does not strongly support that missed_relevant_visual_evidence mechanism applies to most use cases.
         . in more details: while stage 6 shows that ours show answer-level recovery, stage 7 only verify it in a very few number of cases.
             . most of the recovery cases are unclear.
-
+        . we could not prove the problem with redundancy.
+            . redundancy remains a plausible hypothesis, but it is not visually confirmed by stage 7.
+        . what is proven:
+            . a method to quantitatively verify our hypothesis
+            . there are some cases where visualization supports our explanation
+                . a small number of cases are consistent with the missed-evidence explanation.
+            . most recovery cases cannot be explained simply by retained-patch coverage.
+                . it means that recovery can associate to:
+                    . position of the patches retained
+                    . patch representation inside the model
+                    . token merging/recycling
+                    . text-visual interaction
+                    . decoder/generation behaviour
+                    . language prior
+                    . small details visualization cannot illustrate
+- Ours improves answer-level recovery over SparseVLM-Original in the analyzed cases. Visualization suggests that some recoveries may be associated with better preservation of relevant visual regions, but most cases remain visually inconclusive. Therefore, selected-token visualization alone is insufficient to establish the exact causal mechanism.
+    + therefore, stage 7 helps stage 7 helps verify the validity of the explanation from stage 6. 
+        . the results show that the explanation "missed relevant visual evidence" is only supported qualitatively and locally, rather than being sufficient to explain the entire recovery. this helps me adjust the claim to be more cautious.
+    + the main contribution still lies in proposing and evaluating a visual information selection method, showing improvement at the answer-level/failure-recovery. 
+        . stage 7 does not deny that improvement, but only indicates that the recovery mechanism is more complex than simple selected-patch coverage.
+    + the sparsevlm paper uses visualization primarily to illustrate the pruning process and prompt-guided focus, not to prove the causal mechanism for each failure recovery. 
+        . in this project, i use visualization to test a stronger claim: whether the recovery can be explained by the retained evidence regions. therefore, the evaluation criteria are stricter, and many cases become inconclusive.

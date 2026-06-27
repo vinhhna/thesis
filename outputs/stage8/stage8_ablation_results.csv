@@ -1,0 +1,16 @@
+dataset,run_id,run_available,ablation_role,method,selection_method,token_setting,candidate_pool_factor,lambda_relevance,threshold_tau,sample_count,accuracy,f1,correct,recovered_baseline_failures,recovery_rate,regressions_vs_baseline,net_gain,pairwise_available_count,mean_pairwise_similarity,p90_pairwise_similarity,similarity_above_0.85_ratio,mean_bbox_area_ratio,mean_grid_occupancy_ratio,mean_distance_to_centroid,notes
+gqa,GQA-OURS-64,true,official_baseline,Ours,mmr,64,2,0.8,0.85,5000,0.624800,,3124,341,0.173184,248,93,0,,,,0.785026,0.026387,8.015606,official Ours-64 baseline
+gqa,GQA-STAGE8-OURS-64-P2-L05,false,ablation_variant,Ours,mmr,64,2,0.5,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+gqa,GQA-STAGE8-OURS-64-P2-L07,false,ablation_variant,Ours,mmr,64,2,0.7,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+gqa,GQA-STAGE8-OURS-64-P3-L05,false,ablation_variant,Ours,mmr,64,3,0.5,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+gqa,GQA-STAGE8-OURS-64-P3-L07,false,ablation_variant,Ours,mmr,64,3,0.7,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+pope,POPE-OURS-64,true,official_baseline,Ours,mmr,64,2,0.8,0.85,1500,0.830000,0.840923,1245,55,0.192982,25,30,0,,,,0.794150,0.026244,8.093704,official Ours-64 baseline
+pope,POPE-STAGE8-OURS-64-P2-L05,false,ablation_variant,Ours,mmr,64,2,0.5,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+pope,POPE-STAGE8-OURS-64-P2-L07,false,ablation_variant,Ours,mmr,64,2,0.7,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+pope,POPE-STAGE8-OURS-64-P3-L05,false,ablation_variant,Ours,mmr,64,3,0.5,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+pope,POPE-STAGE8-OURS-64-P3-L07,false,ablation_variant,Ours,mmr,64,3,0.7,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+failure_mining,FM-OURS-64,true,official_baseline,Ours,mmr,64,2,0.8,0.85,100,0.750000,,75,10,0.333333,5,5,0,,,,0.783819,0.026268,8.096846,official Ours-64 baseline
+failure_mining,FM-STAGE8-OURS-64-P2-L05,false,ablation_variant,Ours,mmr,64,2,0.5,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+failure_mining,FM-STAGE8-OURS-64-P2-L07,false,ablation_variant,Ours,mmr,64,2,0.7,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+failure_mining,FM-STAGE8-OURS-64-P3-L05,false,ablation_variant,Ours,mmr,64,3,0.5,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported
+failure_mining,FM-STAGE8-OURS-64-P3-L07,false,ablation_variant,Ours,mmr,64,3,0.7,0.85,,,,,,,,,,,,,,,,planned Stage 8 ablation run; metrics populate after Kaggle output is imported

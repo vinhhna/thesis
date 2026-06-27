@@ -84,6 +84,64 @@ def _compute_redundancy_sim(visual_states, v_token_num, dtype):
     return redundancy_sim.to(dtype=dtype)
 
 
+def _selection_pairwise_similarity_stats(visual_states, mask, v_token_num):
+    """
+    Compute diagnostic selected-token similarity aggregates without storing vectors.
+
+    The similarities are computed over current visual-token hidden states at the
+    pruning layer. They are not based on original CLIP patch IDs, so they remain
+    separate from spatial/Jaccard metrics that use selected_original_token_indices.
+    """
+    v_token_num = _to_int(v_token_num)
+    selected_counts = [int(mask[batch].sum().item()) for batch in range(mask.shape[0])]
+    stats = {
+        "pairwise_similarity_available": False,
+        "pairwise_similarity_token_count": int(sum(selected_counts)),
+        "mean_pairwise_similarity": None,
+        "median_pairwise_similarity": None,
+        "max_pairwise_similarity": None,
+        "p90_pairwise_similarity": None,
+        "similarity_above_0.80_ratio": None,
+        "similarity_above_0.85_ratio": None,
+        "similarity_above_0.90_ratio": None,
+    }
+    if v_token_num <= 0:
+        return stats
+
+    normalized = F.normalize(visual_states[:, :v_token_num, :].float(), p=2, dim=-1)
+    values = []
+    for batch in range(mask.shape[0]):
+        selected = torch.where(mask[batch])[0]
+        if selected.numel() < 2:
+            continue
+        selected_states = normalized[batch, selected, :]
+        similarity = torch.matmul(selected_states, selected_states.transpose(0, 1))
+        off_diagonal = similarity[~torch.eye(selected.numel(), dtype=torch.bool, device=similarity.device)]
+        values.append(off_diagonal.detach().float().cpu())
+
+    if not values:
+        return stats
+
+    similarities = torch.cat(values)
+    stats.update({
+        "pairwise_similarity_available": True,
+        "mean_pairwise_similarity": float(similarities.mean().item()),
+        "median_pairwise_similarity": float(similarities.median().item()),
+        "max_pairwise_similarity": float(similarities.max().item()),
+        "p90_pairwise_similarity": float(torch.quantile(similarities, 0.90).item()),
+        "similarity_above_0.80_ratio": float((similarities > 0.80).float().mean().item()),
+        "similarity_above_0.85_ratio": float((similarities > 0.85).float().mean().item()),
+        "similarity_above_0.90_ratio": float((similarities > 0.90).float().mean().item()),
+    })
+    return stats
+
+
+def _attach_pairwise_similarity_stats(stats, visual_states, mask, v_token_num, record_selection_similarity):
+    if record_selection_similarity:
+        stats.update(_selection_pairwise_similarity_stats(visual_states, mask, v_token_num))
+    return stats
+
+
 def _passes_similarity_threshold(redundancy_sim, batch_idx, token_idx, selected_indices, threshold_tau):
     if len(selected_indices) == 0:
         return True
@@ -383,6 +441,7 @@ def attn_postprocess_select(
     threshold_tau=0.85,
     candidate_pool_factor=2,
     lambda_relevance=0.8,
+    record_selection_similarity=False,
 ):
     selection_method = selection_method.lower()
     if selection_method not in SELECTION_METHODS:
@@ -402,6 +461,9 @@ def attn_postprocess_select(
         )
         keep_num = _get_keep_budget(layer_idx, retained_tokens, v_token_num_int) if v_token_num_int != 0 else 0
         stats = _base_stats("topk", layer_idx, retained_tokens, v_token_num_int, keep_num, keep_num, mask)
+        stats = _attach_pairwise_similarity_stats(
+            stats, visual_states, mask, v_token_num_int, record_selection_similarity
+        )
         return mask, s_flag, relation_vis_text, stats
 
     if selection_method == "mmr":
@@ -420,6 +482,10 @@ def attn_postprocess_select(
         keep_num = _get_keep_budget(layer_idx, retained_tokens, v_token_num_int) if v_token_num_int != 0 else 0
         candidate_num = _get_candidate_num(keep_num, candidate_pool_factor, v_token_num_int)
         stats = _base_stats("mmr", layer_idx, retained_tokens, v_token_num_int, keep_num, candidate_num, mask)
+        stats["lambda_relevance"] = float(lambda_relevance)
+        stats = _attach_pairwise_similarity_stats(
+            stats, visual_states, mask, v_token_num_int, record_selection_similarity
+        )
         return mask, s_flag, relation_vis_text, stats
 
     if selection_method == "threshold_fixed":
@@ -435,6 +501,9 @@ def attn_postprocess_select(
             threshold_tau=threshold_tau,
             candidate_pool_factor=candidate_pool_factor,
         )
+        stats = _attach_pairwise_similarity_stats(
+            stats, visual_states, mask, v_token_num_int, record_selection_similarity
+        )
         return mask, s_flag, relation_vis_text, stats
 
     mask, s_flag, relation_vis_text, stats = attn_postprocess_threshold_adaptive(
@@ -448,6 +517,9 @@ def attn_postprocess_select(
         retained_tokens,
         threshold_tau=threshold_tau,
         candidate_pool_factor=candidate_pool_factor,
+    )
+    stats = _attach_pairwise_similarity_stats(
+        stats, visual_states, mask, v_token_num_int, record_selection_similarity
     )
     return mask, s_flag, relation_vis_text, stats
 

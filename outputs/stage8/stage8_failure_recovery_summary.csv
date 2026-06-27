@@ -1,0 +1,22 @@
+dataset,token_setting,comparison_method,selection_method,run_id,baseline_run_id,sample_count,sparse_wrong_count,recovered_baseline_failures,recovery_rate,regressions_vs_baseline,regression_rate,net_gain,both_recovered,ours_only_recovered,threshold_only_recovered,unresolved_by_ours_and_threshold,comparison_note
+failure_mining,64,Ours,mmr,FM-OURS-64,FM-SPARSE-ORIG-64,100,30,10,0.333333,5,0.071429,5,7,3,0,20,fixed-budget comparison
+failure_mining,64,Threshold-Adaptive,threshold_adaptive,FM-THRESHOLD-ADAPT-080,FM-SPARSE-ORIG-64,100,30,9,0.300000,4,0.057143,5,7,3,0,20,variable-token trade-off baseline
+failure_mining,64,Threshold-Adaptive,threshold_adaptive,FM-THRESHOLD-ADAPT-085,FM-SPARSE-ORIG-64,100,30,9,0.300000,6,0.085714,3,7,3,0,20,variable-token trade-off baseline
+failure_mining,64,Threshold-Adaptive,threshold_adaptive,FM-THRESHOLD-ADAPT-090,FM-SPARSE-ORIG-64,100,30,9,0.300000,4,0.057143,5,7,3,0,20,variable-token trade-off baseline
+failure_mining,64,Threshold-Fixed-k,threshold_fixed,FM-THRESHOLD-FIXED-64,FM-SPARSE-ORIG-64,100,30,7,0.233333,7,0.100000,0,7,3,0,20,fixed-budget comparison
+failure_mining,128,Ours,mmr,FM-OURS-128,FM-SPARSE-ORIG-128,100,21,2,0.095238,2,0.025316,0,2,0,0,19,fixed-budget comparison
+failure_mining,128,Threshold-Fixed-k,threshold_fixed,FM-THRESHOLD-FIXED-128,FM-SPARSE-ORIG-128,100,21,2,0.095238,7,0.088608,-5,2,0,0,19,fixed-budget comparison
+gqa,64,Ours,mmr,GQA-OURS-64,GQA-SPARSE-ORIG-64,5000,1969,341,0.173184,248,0.081821,93,228,113,136,1492,fixed-budget comparison
+gqa,64,Threshold-Adaptive,threshold_adaptive,GQA-THRESHOLD-ADAPT-080,GQA-SPARSE-ORIG-64,5000,1969,386,0.196039,275,0.090729,111,228,113,136,1492,variable-token trade-off baseline
+gqa,64,Threshold-Adaptive,threshold_adaptive,GQA-THRESHOLD-ADAPT-085,GQA-SPARSE-ORIG-64,5000,1969,398,0.202133,245,0.080831,153,228,113,136,1492,variable-token trade-off baseline
+gqa,64,Threshold-Adaptive,threshold_adaptive,GQA-THRESHOLD-ADAPT-090,GQA-SPARSE-ORIG-64,5000,1969,395,0.200609,223,0.073573,172,228,113,136,1492,variable-token trade-off baseline
+gqa,64,Threshold-Fixed-k,threshold_fixed,GQA-THRESHOLD-FIXED-64,GQA-SPARSE-ORIG-64,5000,1969,364,0.184865,235,0.077532,129,228,113,136,1492,fixed-budget comparison
+gqa,128,Ours,mmr,GQA-OURS-128,GQA-SPARSE-ORIG-128,5000,1696,263,0.155071,186,0.056295,77,191,72,82,1351,fixed-budget comparison
+gqa,128,Threshold-Fixed-k,threshold_fixed,GQA-THRESHOLD-FIXED-128,GQA-SPARSE-ORIG-128,5000,1696,273,0.160967,172,0.052058,101,191,72,82,1351,fixed-budget comparison
+pope,64,Ours,mmr,POPE-OURS-64,POPE-SPARSE-ORIG-64,1500,285,55,0.192982,25,0.020576,30,39,16,31,199,fixed-budget comparison
+pope,64,Threshold-Adaptive,threshold_adaptive,POPE-THRESHOLD-ADAPT-080,POPE-SPARSE-ORIG-64,1500,285,59,0.207018,38,0.031276,21,39,16,31,199,variable-token trade-off baseline
+pope,64,Threshold-Adaptive,threshold_adaptive,POPE-THRESHOLD-ADAPT-085,POPE-SPARSE-ORIG-64,1500,285,64,0.224561,28,0.023045,36,39,16,31,199,variable-token trade-off baseline
+pope,64,Threshold-Adaptive,threshold_adaptive,POPE-THRESHOLD-ADAPT-090,POPE-SPARSE-ORIG-64,1500,285,69,0.242105,31,0.025514,38,39,16,31,199,variable-token trade-off baseline
+pope,64,Threshold-Fixed-k,threshold_fixed,POPE-THRESHOLD-FIXED-64,POPE-SPARSE-ORIG-64,1500,285,70,0.245614,20,0.016461,50,39,16,31,199,fixed-budget comparison
+pope,128,Ours,mmr,POPE-OURS-128,POPE-SPARSE-ORIG-128,1500,220,33,0.150000,34,0.026562,-1,26,7,5,182,fixed-budget comparison
+pope,128,Threshold-Fixed-k,threshold_fixed,POPE-THRESHOLD-FIXED-128,POPE-SPARSE-ORIG-128,1500,220,31,0.140909,35,0.027344,-4,26,7,5,182,fixed-budget comparison

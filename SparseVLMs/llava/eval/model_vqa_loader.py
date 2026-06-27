@@ -112,6 +112,8 @@ def eval_model(args):
                 selection_method=args.selection_method,
                 threshold_tau=args.threshold_tau,
                 candidate_pool_factor=args.candidate_pool_factor,
+                lambda_relevance=args.lambda_relevance,
+                record_selection_similarity=args.record_selection_similarity,
                 do_sample=True if args.temperature > 0 else False,
                 temperature=args.temperature,
                 top_p=args.top_p,
@@ -127,6 +129,8 @@ def eval_model(args):
             "retained_tokens": retained_tokens,
             "threshold_tau": args.threshold_tau,
             "candidate_pool_factor": args.candidate_pool_factor,
+            "lambda_relevance": args.lambda_relevance,
+            "record_selection_similarity": args.record_selection_similarity,
         }
         metadata.update(sparse_metadata)
         if args.selection_method == "threshold_adaptive":
@@ -152,6 +156,8 @@ def eval_model(args):
                 "retained_tokens": retained_tokens,
                 "threshold_tau": args.threshold_tau,
                 "candidate_pool_factor": args.candidate_pool_factor,
+                "lambda_relevance": args.lambda_relevance,
+                "record_selection_similarity": args.record_selection_similarity,
                 "retained_token_count": adaptive_retained_counts,
                 "average_retained_tokens": sum(adaptive_retained_counts) / len(adaptive_retained_counts),
                 "min_retained_tokens": min(adaptive_retained_counts),
@@ -177,6 +183,8 @@ if __name__ == "__main__":
                         choices=["topk", "mmr", "threshold_fixed", "threshold_adaptive"])
     parser.add_argument("--threshold_tau", type=float, default=0.85)
     parser.add_argument("--candidate_pool_factor", type=int, default=2)
+    parser.add_argument("--lambda_relevance", type=float, default=0.8)
+    parser.add_argument("--record_selection_similarity", action="store_true")
     args = parser.parse_args()
 
     eval_model(args)
