@@ -1,12 +1,16 @@
-# Stage 8 — Ablation and Auxiliary Metric Analysis
+# Stage 8 - Ablation and Auxiliary Metric Analysis
 
-Stage 8 quantifies selected-token behavior because Stage 7 visualizations were mostly inconclusive. The current outputs use all available saved prediction metadata for spatial coverage, selected-patch overlap, and failure recovery. Pairwise hidden-state similarity is reported only when instrumented Kaggle reruns provide the required metadata.
+Stage 8 quantifies selected-token behavior because Stage 7 visualizations were mostly inconclusive. The revised ablation design uses deterministic 500-sample GQA and POPE subsets for general hyperparameter evidence. Failure-mining is treated only as a secondary targeted recovery/stress-test set because it is intentionally skewed toward difficult SparseVLM cases. Pairwise hidden-state similarity is reported only when instrumented Kaggle reruns provide the required metadata.
 
 ## Data status
 
 - Detailed selected-token metric rows: 178200
 - Pairwise similarity available: no
-- Pending planned Ours ablation runs: 12
+- Pending required GQA/POPE Stage 8 subset runs: 14
+- Optional failure-mining ablation rows tracked: 4
+
+The full Stage 5 benchmark tables remain the official benchmark results. Stage 8 subset results are auxiliary mechanism and hyperparameter evidence, not replacement benchmark scores.
+Spatial and overlap summaries may still include existing full-run metadata; the GQA/POPE subset ablation table is the place where Stage 8 subset accuracy and recovery are reported.
 
 ## Pairwise similarity
 
@@ -64,6 +68,8 @@ Jaccard and overlap are computed from unique original patch IDs, not raw selecte
 
 ## Failure recovery
 
+The table below summarizes recovery behavior from saved full-run metadata. These rows should be read separately from the Stage 8 GQA/POPE subset ablations.
+
 | dataset | token_setting | run_id | sparse_wrong_count | recovered_baseline_failures | recovery_rate | regressions_vs_baseline | net_gain |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | failure_mining | 64 | FM-OURS-64 | 30 | 10 | 0.333333 | 5 | 5 |
@@ -83,23 +89,35 @@ For failure-mining at 64 tokens, the known Stage 6 recovery grouping is preserve
 
 ## Ours ablation status
 
-| dataset | run_id | run_available | ablation_role | candidate_pool_factor | lambda_relevance | accuracy | f1 | mean_pairwise_similarity | notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| gqa | GQA-OURS-64 | true | official_baseline | 2 | 0.8 | 0.624800 |  |  | official Ours-64 baseline |
-| gqa | GQA-STAGE8-OURS-64-P2-L05 | false | ablation_variant | 2 | 0.5 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| gqa | GQA-STAGE8-OURS-64-P2-L07 | false | ablation_variant | 2 | 0.7 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| gqa | GQA-STAGE8-OURS-64-P3-L05 | false | ablation_variant | 3 | 0.5 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| gqa | GQA-STAGE8-OURS-64-P3-L07 | false | ablation_variant | 3 | 0.7 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| pope | POPE-OURS-64 | true | official_baseline | 2 | 0.8 | 0.830000 | 0.840923 |  | official Ours-64 baseline |
-| pope | POPE-STAGE8-OURS-64-P2-L05 | false | ablation_variant | 2 | 0.5 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| pope | POPE-STAGE8-OURS-64-P2-L07 | false | ablation_variant | 2 | 0.7 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| pope | POPE-STAGE8-OURS-64-P3-L05 | false | ablation_variant | 3 | 0.5 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| pope | POPE-STAGE8-OURS-64-P3-L07 | false | ablation_variant | 3 | 0.7 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| failure_mining | FM-OURS-64 | true | official_baseline | 2 | 0.8 | 0.750000 |  |  | official Ours-64 baseline |
-| failure_mining | FM-STAGE8-OURS-64-P2-L05 | false | ablation_variant | 2 | 0.5 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| failure_mining | FM-STAGE8-OURS-64-P2-L07 | false | ablation_variant | 2 | 0.7 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| failure_mining | FM-STAGE8-OURS-64-P3-L05 | false | ablation_variant | 3 | 0.5 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
-| failure_mining | FM-STAGE8-OURS-64-P3-L07 | false | ablation_variant | 3 | 0.7 |  |  |  | planned Stage 8 ablation run; metrics populate after Kaggle output is imported |
+General ablation conclusions should be drawn from the GQA/POPE 500-sample subset rows, not from failure-mining.
+
+| dataset | run_id | run_available | ablation_role | row_role | candidate_pool_factor | lambda_relevance | subset_seed | subset_size | accuracy | f1 | mean_pairwise_similarity | notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| gqa | GQA-STAGE8-SPARSE-ORIG-64 | false | general_ablation_gqa | required_general_comparison | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| gqa | GQA-STAGE8-OURS-64-P2-L08 | false | general_ablation_gqa | required_general_baseline | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| gqa | GQA-STAGE8-THRESHOLD-FIXED-64 | false | general_ablation_gqa | required_general_comparison | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| gqa | GQA-STAGE8-OURS-64-P2-L05 | false | general_ablation_gqa | required_general_ablation | 2 | 0.5 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| gqa | GQA-STAGE8-OURS-64-P2-L07 | false | general_ablation_gqa | required_general_ablation | 2 | 0.7 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| gqa | GQA-STAGE8-OURS-64-P3-L05 | false | general_ablation_gqa | required_general_ablation | 3 | 0.5 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| gqa | GQA-STAGE8-OURS-64-P3-L07 | false | general_ablation_gqa | required_general_ablation | 3 | 0.7 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| pope | POPE-STAGE8-SPARSE-ORIG-64 | false | general_ablation_pope | required_general_comparison | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| pope | POPE-STAGE8-OURS-64-P2-L08 | false | general_ablation_pope | required_general_baseline | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| pope | POPE-STAGE8-THRESHOLD-FIXED-64 | false | general_ablation_pope | required_general_comparison | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| pope | POPE-STAGE8-OURS-64-P2-L05 | false | general_ablation_pope | required_general_ablation | 2 | 0.5 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| pope | POPE-STAGE8-OURS-64-P2-L07 | false | general_ablation_pope | required_general_ablation | 2 | 0.7 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| pope | POPE-STAGE8-OURS-64-P3-L05 | false | general_ablation_pope | required_general_ablation | 3 | 0.5 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| pope | POPE-STAGE8-OURS-64-P3-L07 | false | general_ablation_pope | required_general_ablation | 3 | 0.7 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+
+### Optional failure-mining stress-test rows
+
+These rows are secondary targeted recovery checks and should not be used as representative general ablation evidence.
+
+| dataset | run_id | run_available | candidate_pool_factor | lambda_relevance | accuracy | recovered_baseline_failures | net_gain | notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| failure_mining | FM-STAGE8-OURS-64-P2-L05 | false | 2 | 0.5 |  |  |  | optional failure-mining stress-test run pending |
+| failure_mining | FM-STAGE8-OURS-64-P2-L07 | false | 2 | 0.7 |  |  |  | optional failure-mining stress-test run pending |
+| failure_mining | FM-STAGE8-OURS-64-P3-L05 | false | 3 | 0.5 |  |  |  | optional failure-mining stress-test run pending |
+| failure_mining | FM-STAGE8-OURS-64-P3-L07 | false | 3 | 0.7 |  |  |  | optional failure-mining stress-test run pending |
 
 ## Threshold-Adaptive interpretation
 
@@ -108,4 +126,4 @@ Threshold-Adaptive is treated as a variable-token trade-off baseline. It should 
 ## Current thesis-safe conclusion
 
 At the current checkpoint, Stage 8 supports spatial/overlap/failure-recovery analysis from saved metadata, but it does not yet support a strong redundancy-reduction claim because true pairwise hidden-state similarity requires instrumented Kaggle reruns.
-The Ours hyperparameter conclusion is also pending until the planned 64-token candidate-pool/lambda ablation runs are imported.
+The Ours hyperparameter conclusion is pending until the required GQA/POPE 500-sample 64-token candidate-pool/lambda ablation runs are imported.

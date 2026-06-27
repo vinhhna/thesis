@@ -1,30 +1,57 @@
-# SparseVLM Kaggle Failure-Mining Production Run
+# SparseVLM Kaggle Stage 8 Subset Runner - One Run
 
-These cells run the final failure-mining experiments from `evaluation_protocol_updated.md`.
+These cells run one Stage 8 ablation/comparison experiment on a deterministic 500-sample subset.
 
-The evaluation set is already stored in the repository:
+Current configured run:
 
-- `failure_mining_set.csv`
-- `data/sample_images/`
+```text
+GQA-STAGE8-SPARSE-ORIG-64
+```
 
-It contains 100 cases: 70 GQA, 20 VQAv2, and 10 TextVQA. No additional Kaggle Dataset input is required.
+Change only `RUN_ID_TO_RUN` in Cell 4 for the next Kaggle session. Each run writes to a unique output folder and creates one zip file under `/kaggle/working`.
 
-Run one method per Kaggle session. Change only `RUN_IDS_TO_RUN` in Cell 4 for the next experiment. Every run writes to a unique directory and creates one zip file under `/kaggle/working`.
+Important: Cell 1 clones from GitHub. Before running this on Kaggle, push the Stage 8 code changes that add `lambda_relevance` and `record_selection_similarity`.
 
-Suggested run order:
+Stage 8 uses fixed subset seed:
 
-1. `FM-DENSE-576`
-2. `FM-SPARSE-ORIG-64`
-3. `FM-OURS-64`
-4. `FM-THRESHOLD-FIXED-64`
-5. `FM-SPARSE-ORIG-128`
-6. `FM-OURS-128`
-7. `FM-THRESHOLD-FIXED-128`
-8. `FM-THRESHOLD-ADAPT-080`
-9. `FM-THRESHOLD-ADAPT-085`
-10. `FM-THRESHOLD-ADAPT-090`
+```text
+20260610
+```
 
-Recovery rates require paired predictions from multiple methods. Each run therefore exports a case-analysis CSV with stable `case_id` values. The final recovery comparison will be calculated after all run zips are downloaded.
+Required GQA runs:
+
+```text
+GQA-STAGE8-SPARSE-ORIG-64
+GQA-STAGE8-OURS-64-P2-L08
+GQA-STAGE8-THRESHOLD-FIXED-64
+GQA-STAGE8-OURS-64-P2-L05
+GQA-STAGE8-OURS-64-P2-L07
+GQA-STAGE8-OURS-64-P3-L05
+GQA-STAGE8-OURS-64-P3-L07
+```
+
+Required POPE runs:
+
+```text
+POPE-STAGE8-SPARSE-ORIG-64
+POPE-STAGE8-OURS-64-P2-L08
+POPE-STAGE8-THRESHOLD-FIXED-64
+POPE-STAGE8-OURS-64-P2-L05
+POPE-STAGE8-OURS-64-P2-L07
+POPE-STAGE8-OURS-64-P3-L05
+POPE-STAGE8-OURS-64-P3-L07
+```
+
+Optional failure-mining stress-test runs:
+
+```text
+FM-STAGE8-OURS-64-P2-L05
+FM-STAGE8-OURS-64-P2-L07
+FM-STAGE8-OURS-64-P3-L05
+FM-STAGE8-OURS-64-P3-L07
+```
+
+These optional runs are not representative ablation evidence; use them only for targeted recovery behavior.
 
 Run Cell 2 only after a fresh clone or package reset, then restart the Kaggle kernel before continuing.
 
@@ -88,7 +115,7 @@ pip(
     "orbax-checkpoint",
 )
 
-pip("install", "--force-reinstall", "numpy==1.26.4", "protobuf", "sentencepiece", "shortuuid")
+pip("install", "--force-reinstall", "numpy==1.26.4", "protobuf", "sentencepiece", "shortuuid", "ijson")
 pip("install", "transformers==4.37.2", "tokenizers==0.15.1", "accelerate==0.21.0", "peft==0.7.1")
 pip("install", "einops==0.6.1", "einops-exts==0.0.4", "timm==0.6.13", "markdown2[all]")
 
@@ -101,16 +128,50 @@ Cell 3: Runtime paths and environment
 
 import os
 import sys
+import zipfile
 from pathlib import Path
 
 import torch
 
 
+def find_kaggle_input_dir(required_child):
+    input_root = Path("/kaggle/input")
+    working_extract_root = Path("/kaggle/working/input_unzipped")
+
+    matches = sorted(path for path in input_root.rglob(required_child) if path.is_dir())
+    if matches:
+        return matches[0]
+
+    zip_matches = sorted(path for path in input_root.rglob(f"{required_child}.zip") if path.is_file())
+    if zip_matches:
+        zip_path = zip_matches[0]
+        target_root = working_extract_root / zip_path.stem
+        marker = target_root / f".{required_child.lower()}_unzip_complete"
+        if not marker.exists():
+            target_root.mkdir(parents=True, exist_ok=True)
+            print("Unzipping Kaggle input archive:", zip_path)
+            print("Unzip target:", target_root)
+            with zipfile.ZipFile(zip_path) as archive:
+                archive.extractall(target_root)
+            marker.write_text(str(zip_path), encoding="utf-8")
+
+        extracted_matches = sorted(
+            path for path in target_root.rglob(required_child)
+            if path.is_dir()
+        )
+        if extracted_matches:
+            return extracted_matches[0]
+
+    available = [str(path) for path in input_root.rglob("*") if path.is_dir() or path.suffix == ".zip"]
+    raise FileNotFoundError(
+        f"Could not find an extracted {required_child!r} folder or {required_child}.zip. "
+        f"Available input paths: {available[:80]}"
+    )
+
+
 REPO_ROOT = Path("/kaggle/working/thesis")
 LLAVA_ROOT = REPO_ROOT / "SparseVLMs"
-FAILURE_MINING_CSV = REPO_ROOT / "failure_mining_set.csv"
-FAILURE_MINING_IMAGE_ROOT = REPO_ROOT
-OUTPUT_BASE_ROOT = Path("/kaggle/working/failure_mining_runs")
+OUTPUT_BASE_ROOT = Path("/kaggle/working/stage8_subset_runs")
 
 os.environ["USE_FLAX"] = "NO"
 os.environ["USE_JAX"] = "NO"
@@ -121,29 +182,29 @@ os.environ["PYTHONPATH"] = str(LLAVA_ROOT)
 if str(LLAVA_ROOT) not in sys.path:
     sys.path.insert(0, str(LLAVA_ROOT))
 
-if not FAILURE_MINING_CSV.exists():
-    raise FileNotFoundError(f"Missing failure-mining CSV: {FAILURE_MINING_CSV}")
-
 print("Torch:", torch.__version__)
 print("Torch CUDA build:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
 print("Repository root:", REPO_ROOT)
-print("Failure-mining CSV:", FAILURE_MINING_CSV)
 print("Output base root:", OUTPUT_BASE_ROOT)
 ```
 
-Cell 4: Failure-mining production helpers
+Cell 4: Stage 8 subset helpers
 ```python
 import csv
 import json
+import random
 import re
 import sys
 import time
+import urllib.request
+import zipfile
 from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
+import ijson
 import shortuuid
 import torch
 from PIL import Image
@@ -186,165 +247,134 @@ CONV_MODE = "llava_v1"
 MAX_NEW_TOKENS = 32
 TEMPERATURE = 0.0
 NUM_BEAMS = 1
-CANDIDATE_POOL_FACTOR = 2
 DEFAULT_THRESHOLD_TAU = 0.85
+DEFAULT_LAMBDA_RELEVANCE = 0.8
+RECORD_SELECTION_SIMILARITY = True
 SPARSE_PRUNING_LOC = [2, 6, 15]
-SHORT_ANSWER_SUFFIX = "\nAnswer using a single word or short phrase."
-CHECKPOINT_EVERY = 10
-EXPECTED_SAMPLE_COUNT = 100
+
+STAGE8_SUBSET_SEED = 20260610
+GQA_STAGE8_SUBSET_N = 500
+POPE_STAGE8_SUBSET_N = 500
+GQA_SHORT_ANSWER_SUFFIX = "\nAnswer the question using a single word or phrase."
+FAILURE_MINING_CSV = REPO_ROOT / "failure_mining_set.csv"
+FAILURE_MINING_IMAGE_ROOT = REPO_ROOT
+FAILURE_MINING_SHORT_ANSWER_SUFFIX = "\nAnswer using a single word or short phrase."
+GQA_QUESTIONS_URLS = [
+    "https://downloads.cs.stanford.edu/nlp/data/gqa/questions1.2.zip",
+    "https://nlp.stanford.edu/data/gqa/questions1.2.zip",
+]
+GQA_QUESTION_FILE_PREFERENCE = [
+    "val_balanced_questions.json",
+    "val_all_questions.json",
+]
+CHECKPOINT_EVERY = 25
 
 REPO_ROOT = Path(REPO_ROOT)
-FAILURE_MINING_CSV = Path(FAILURE_MINING_CSV)
-FAILURE_MINING_IMAGE_ROOT = Path(FAILURE_MINING_IMAGE_ROOT)
+LLAVA_ROOT = Path(LLAVA_ROOT)
 OUTPUT_BASE_ROOT = Path(OUTPUT_BASE_ROOT)
 
 
 # ----- Run catalog -----
 
 @dataclass(frozen=True)
-class FailureMiningRun:
+class Stage8Run:
     run_id: str
+    dataset: str
+    ablation_role: str
     method_label: str
     selection_method: str
-    retained_tokens: int
-    prediction_relpath: str
-    output_relpath: str
+    retained_tokens: int = 64
+    candidate_pool_factor: int = 2
+    lambda_relevance: float = DEFAULT_LAMBDA_RELEVANCE
     threshold_tau: float = DEFAULT_THRESHOLD_TAU
+    record_selection_similarity: bool = RECORD_SELECTION_SIMILARITY
+
+    @property
+    def safe_name(self):
+        return self.run_id.lower().replace("-", "_")
+
+    @property
+    def prediction_relpath(self):
+        return f"{self.dataset}/predictions/{self.safe_name}.jsonl"
+
+    @property
+    def metric_relpath(self):
+        return f"{self.dataset}/{self.safe_name}.csv"
 
 
-FAILURE_MINING_RUNS = [
-    FailureMiningRun(
-        "FM-DENSE-576",
-        "Dense / Vanilla",
-        "dense",
-        576,
-        "failure_mining/predictions/failure_mining_dense_576.jsonl",
-        "failure_mining/failure_mining_dense_576.csv",
-    ),
-    FailureMiningRun(
-        "FM-SPARSE-ORIG-128",
-        "SparseVLM-Original",
-        "topk",
-        128,
-        "failure_mining/predictions/failure_mining_sparsevlm_original_128.jsonl",
-        "failure_mining/failure_mining_sparsevlm_original_128.csv",
-    ),
-    FailureMiningRun(
-        "FM-SPARSE-ORIG-64",
-        "SparseVLM-Original",
-        "topk",
-        64,
-        "failure_mining/predictions/failure_mining_sparsevlm_original_64.jsonl",
-        "failure_mining/failure_mining_sparsevlm_original_64.csv",
-    ),
-    FailureMiningRun(
-        "FM-OURS-128",
-        "Ours",
-        "mmr",
-        128,
-        "failure_mining/predictions/failure_mining_ours_128.jsonl",
-        "failure_mining/failure_mining_ours_128.csv",
-    ),
-    FailureMiningRun(
-        "FM-OURS-64",
-        "Ours",
-        "mmr",
-        64,
-        "failure_mining/predictions/failure_mining_ours_64.jsonl",
-        "failure_mining/failure_mining_ours_64.csv",
-    ),
-    FailureMiningRun(
-        "FM-THRESHOLD-FIXED-128",
-        "Threshold-Fixed-k",
-        "threshold_fixed",
-        128,
-        "failure_mining/predictions/failure_mining_threshold_fixed_128.jsonl",
-        "failure_mining/failure_mining_threshold_fixed_128.csv",
-    ),
-    FailureMiningRun(
-        "FM-THRESHOLD-FIXED-64",
-        "Threshold-Fixed-k",
-        "threshold_fixed",
-        64,
-        "failure_mining/predictions/failure_mining_threshold_fixed_64.jsonl",
-        "failure_mining/failure_mining_threshold_fixed_64.csv",
-    ),
-    FailureMiningRun(
-        "FM-THRESHOLD-ADAPT-080",
-        "Threshold-Adaptive",
-        "threshold_adaptive",
-        64,
-        "failure_mining/predictions/failure_mining_threshold_adaptive_tau080.jsonl",
-        "failure_mining/failure_mining_threshold_adaptive_tau080.csv",
-        threshold_tau=0.80,
-    ),
-    FailureMiningRun(
-        "FM-THRESHOLD-ADAPT-085",
-        "Threshold-Adaptive",
-        "threshold_adaptive",
-        64,
-        "failure_mining/predictions/failure_mining_threshold_adaptive_tau085.jsonl",
-        "failure_mining/failure_mining_threshold_adaptive_tau085.csv",
-        threshold_tau=0.85,
-    ),
-    FailureMiningRun(
-        "FM-THRESHOLD-ADAPT-090",
-        "Threshold-Adaptive",
-        "threshold_adaptive",
-        64,
-        "failure_mining/predictions/failure_mining_threshold_adaptive_tau090.jsonl",
-        "failure_mining/failure_mining_threshold_adaptive_tau090.csv",
-        threshold_tau=0.90,
-    ),
+STAGE8_RUNS = [
+    Stage8Run("GQA-STAGE8-SPARSE-ORIG-64", "gqa", "general_ablation_gqa", "SparseVLM-Original", "topk"),
+    Stage8Run("GQA-STAGE8-OURS-64-P2-L08", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.8),
+    Stage8Run("GQA-STAGE8-THRESHOLD-FIXED-64", "gqa", "general_ablation_gqa", "Threshold-Fixed-k", "threshold_fixed"),
+    Stage8Run("GQA-STAGE8-OURS-64-P2-L05", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.5),
+    Stage8Run("GQA-STAGE8-OURS-64-P2-L07", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.7),
+    Stage8Run("GQA-STAGE8-OURS-64-P3-L05", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.5),
+    Stage8Run("GQA-STAGE8-OURS-64-P3-L07", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.7),
+    Stage8Run("POPE-STAGE8-SPARSE-ORIG-64", "pope", "general_ablation_pope", "SparseVLM-Original", "topk"),
+    Stage8Run("POPE-STAGE8-OURS-64-P2-L08", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.8),
+    Stage8Run("POPE-STAGE8-THRESHOLD-FIXED-64", "pope", "general_ablation_pope", "Threshold-Fixed-k", "threshold_fixed"),
+    Stage8Run("POPE-STAGE8-OURS-64-P2-L05", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.5),
+    Stage8Run("POPE-STAGE8-OURS-64-P2-L07", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.7),
+    Stage8Run("POPE-STAGE8-OURS-64-P3-L05", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.5),
+    Stage8Run("POPE-STAGE8-OURS-64-P3-L07", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.7),
+    Stage8Run("FM-STAGE8-OURS-64-P2-L05", "failure_mining", "targeted_failure_recovery", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.5),
+    Stage8Run("FM-STAGE8-OURS-64-P2-L07", "failure_mining", "targeted_failure_recovery", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.7),
+    Stage8Run("FM-STAGE8-OURS-64-P3-L05", "failure_mining", "targeted_failure_recovery", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.5),
+    Stage8Run("FM-STAGE8-OURS-64-P3-L07", "failure_mining", "targeted_failure_recovery", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.7),
 ]
 
+# Change this value for each Kaggle session. Keep exactly one run ID here.
+RUN_ID_TO_RUN = "GQA-STAGE8-SPARSE-ORIG-64"
 
-# Change this single value for each Kaggle session.
-RUN_IDS_TO_RUN = [
-    "FM-DENSE-576",
-]
+RUN_BY_ID = {run.run_id: run for run in STAGE8_RUNS}
+if RUN_ID_TO_RUN not in RUN_BY_ID:
+    raise ValueError(f"Unknown RUN_ID_TO_RUN: {RUN_ID_TO_RUN}")
 
-
-def selected_failure_mining_runs():
-    run_by_id = {run.run_id: run for run in FAILURE_MINING_RUNS}
-    missing = [run_id for run_id in RUN_IDS_TO_RUN if run_id not in run_by_id]
-    if missing:
-        raise ValueError(f"Unknown RUN_IDS_TO_RUN entries: {missing}")
-    return [run_by_id[run_id] for run_id in RUN_IDS_TO_RUN]
+CURRENT_RUN = RUN_BY_ID[RUN_ID_TO_RUN]
 
 
-SELECTED_RUNS = selected_failure_mining_runs()
-if len(SELECTED_RUNS) != 1:
-    raise ValueError(
-        "Run exactly one failure-mining experiment per Kaggle session. "
-        "Set RUN_IDS_TO_RUN to one run ID."
-    )
+def expected_sample_count(dataset):
+    if dataset == "gqa":
+        return GQA_STAGE8_SUBSET_N
+    if dataset == "pope":
+        return POPE_STAGE8_SUBSET_N
+    if dataset == "failure_mining":
+        return 100
+    raise ValueError(f"Unsupported Stage 8 dataset: {dataset}")
 
-CURRENT_RUN = SELECTED_RUNS[0]
+
 OUTPUT_ROOT = OUTPUT_BASE_ROOT / CURRENT_RUN.run_id
 DOWNLOAD_ZIP = Path(f"/kaggle/working/{CURRENT_RUN.run_id}_download.zip")
 RESULTS_ROOT = OUTPUT_ROOT / "results"
 LOG_DIR = OUTPUT_ROOT / "logs"
 SUMMARY_DIR = RESULTS_ROOT / "summary"
-MANIFEST_PATH = OUTPUT_ROOT / "failure_mining_manifest.json"
-DATASET_SNAPSHOT_PATH = OUTPUT_ROOT / "failure_mining_set_snapshot.csv"
+MANIFEST_PATH = OUTPUT_ROOT / "stage8_subset_manifest.json"
+SUBSET_PATH = OUTPUT_ROOT / f"stage8_{CURRENT_RUN.dataset}_subset_seed{STAGE8_SUBSET_SEED}_n{expected_sample_count(CURRENT_RUN.dataset)}.jsonl"
 
 for path in [RESULTS_ROOT, LOG_DIR, SUMMARY_DIR]:
     path.mkdir(parents=True, exist_ok=True)
 
 
-# ----- General file helpers -----
+# ----- Common IO and metrics -----
 
 def write_jsonl(path, records):
-    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def read_jsonl(path):
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
 def write_csv(path, rows, fieldnames):
-    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -352,9 +382,270 @@ def write_csv(path, rows, fieldnames):
         writer.writerows(rows)
 
 
-# ----- Dataset loading and validation -----
+def normalize_answer(text):
+    text = str(text or "").strip().lower()
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
-def load_failure_mining_samples():
+
+def normalize_gqa_answer(text):
+    text = str(text or "").strip().lower().rstrip(".")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def pope_label_from_answer(text):
+    words = normalize_answer(text).split()
+    return "no" if "no" in words or "not" in words else "yes"
+
+
+def exact_or_phrase_match(prediction, target):
+    pred = normalize_answer(prediction)
+    gold = normalize_answer(target)
+    if not pred or not gold:
+        return False
+    if gold in {"yes", "no"}:
+        return pope_label_from_answer(pred) == gold
+    return re.search(rf"(?:^| ){re.escape(gold)}(?: |$)", pred) is not None
+
+
+def compute_metrics(dataset, predictions):
+    if dataset == "gqa":
+        correct = sum(
+            normalize_gqa_answer(item["text"]) == normalize_gqa_answer(item["ground_truth"])
+            for item in predictions
+        )
+        total = len(predictions)
+        return {
+            "accuracy": correct / total if total else 0.0,
+            "correct": correct,
+            "total": total,
+        }
+
+    if dataset == "failure_mining":
+        correct = sum(
+            exact_or_phrase_match(item["text"], item["ground_truth"])
+            for item in predictions
+        )
+        total = len(predictions)
+        return {
+            "accuracy": correct / total if total else 0.0,
+            "correct": correct,
+            "total": total,
+        }
+
+    y_true = [1 if normalize_answer(item["ground_truth"]) == "yes" else 0 for item in predictions]
+    y_pred = [1 if pope_label_from_answer(item["text"]) == "yes" else 0 for item in predictions]
+    tp = sum(pred == 1 and gold == 1 for pred, gold in zip(y_pred, y_true))
+    tn = sum(pred == 0 and gold == 0 for pred, gold in zip(y_pred, y_true))
+    fp = sum(pred == 1 and gold == 0 for pred, gold in zip(y_pred, y_true))
+    fn = sum(pred == 0 and gold == 1 for pred, gold in zip(y_pred, y_true))
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {
+        "accuracy": (tp + tn) / len(y_true) if y_true else 0.0,
+        "f1": f1,
+        "precision": precision,
+        "recall": recall,
+        "tp": tp,
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+        "correct": tp + tn,
+        "total": len(y_true),
+    }
+
+
+# ----- GQA data -----
+
+def find_first_existing(root, names):
+    for name in names:
+        matches = sorted(path for path in root.rglob(name) if path.is_file())
+        if matches:
+            return matches[0]
+    return None
+
+
+def download_file(url, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists() and destination.stat().st_size > 0:
+        print("Using existing download:", destination)
+        return destination
+    print("Downloading:", url)
+    with urllib.request.urlopen(url, timeout=60) as response, open(destination, "wb") as output:
+        while True:
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                break
+            output.write(chunk)
+    return destination
+
+
+def extract_gqa_question_file_from_zip(zip_path):
+    target_root = Path("/kaggle/working/gqa_questions")
+    target_root.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as archive:
+        names = archive.namelist()
+        for desired in GQA_QUESTION_FILE_PREFERENCE:
+            matches = [name for name in names if name.endswith(desired)]
+            if matches:
+                member = sorted(matches)[0]
+                target_path = target_root / desired
+                if not target_path.exists():
+                    print("Extracting GQA question file:", member)
+                    with archive.open(member) as src, open(target_path, "wb") as dst:
+                        while True:
+                            chunk = src.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            dst.write(chunk)
+                return target_path
+    raise FileNotFoundError(f"No validation question file found inside {zip_path}")
+
+
+def find_gqa_question_file(gqa_root):
+    question_path = find_first_existing(gqa_root, GQA_QUESTION_FILE_PREFERENCE)
+    if question_path:
+        return question_path
+
+    input_root = Path("/kaggle/input")
+    zip_matches = sorted(input_root.rglob("questions1.2.zip")) + sorted(gqa_root.rglob("questions1.2.zip"))
+    if zip_matches:
+        return extract_gqa_question_file_from_zip(zip_matches[0])
+
+    download_dir = Path("/kaggle/working/gqa_downloads")
+    last_error = None
+    for url in GQA_QUESTIONS_URLS:
+        try:
+            zip_path = download_file(url, download_dir / "questions1.2.zip")
+            return extract_gqa_question_file_from_zip(zip_path)
+        except Exception as exc:
+            last_error = exc
+            print("Question download attempt failed:", repr(exc))
+    raise FileNotFoundError(
+        "Could not find or download GQA validation questions. "
+        "Upload val_balanced_questions.json or questions1.2.zip to the Kaggle Dataset."
+    ) from last_error
+
+
+def iter_gqa_questions(question_path):
+    with open(question_path, "rb") as f:
+        for question_id, question in ijson.kvitems(f, ""):
+            yield str(question_id), question
+
+
+def build_gqa_samples():
+    gqa_root = find_kaggle_input_dir("GQA")
+    gqa_image_dir = gqa_root / "images"
+    gqa_question_path = find_gqa_question_file(gqa_root)
+    print("GQA root:", gqa_root)
+    print("GQA image dir:", gqa_image_dir)
+    print("GQA question file:", gqa_question_path)
+
+    samples = []
+    skipped_missing_image = 0
+    skipped_unbalanced = 0
+    for question_id, question in iter_gqa_questions(gqa_question_path):
+        if not question.get("isBalanced", True):
+            skipped_unbalanced += 1
+            continue
+        question_text = question.get("question", "")
+        answer = question.get("answer", "")
+        image_id = str(question.get("imageId", ""))
+        image_path = gqa_image_dir / f"{image_id}.jpg"
+        if not question_text or not answer or not image_id:
+            continue
+        if not image_path.exists():
+            skipped_missing_image += 1
+            continue
+        types = question.get("types", {}) or {}
+        samples.append({
+            "question_id": question_id,
+            "question": question_text,
+            "prompt": question_text + GQA_SHORT_ANSWER_SUFFIX,
+            "ground_truth": str(answer),
+            "image_id": image_id,
+            "image_path": str(image_path),
+            "is_balanced": bool(question.get("isBalanced", True)),
+            "structural_type": types.get("structural", ""),
+            "semantic_type": types.get("semantic", ""),
+            "detailed_type": types.get("detailed", ""),
+        })
+
+    if len(samples) < GQA_STAGE8_SUBSET_N:
+        raise RuntimeError(
+            f"Only found {len(samples)} valid GQA samples, expected {GQA_STAGE8_SUBSET_N}. "
+            f"Skipped missing images: {skipped_missing_image}; skipped unbalanced: {skipped_unbalanced}."
+        )
+    rng = random.Random(STAGE8_SUBSET_SEED)
+    selected = rng.sample(sorted(samples, key=lambda item: item["question_id"]), GQA_STAGE8_SUBSET_N)
+    selected.sort(key=lambda item: item["question_id"])
+    write_jsonl(SUBSET_PATH, selected)
+    return selected, {
+        "eligible_seen": len(samples),
+        "skipped_missing_image": skipped_missing_image,
+        "skipped_unbalanced": skipped_unbalanced,
+        "subset_seed": STAGE8_SUBSET_SEED,
+        "subset_size": GQA_STAGE8_SUBSET_N,
+        "subset_file": str(SUBSET_PATH),
+    }
+
+
+# ----- POPE data -----
+
+def build_pope_samples():
+    pope_root = find_kaggle_input_dir("POPE")
+    pope_annotations_dir = pope_root / "annotations"
+    pope_image_dir = pope_root / "val2014"
+    print("POPE root:", pope_root)
+    print("POPE annotations:", pope_annotations_dir)
+    print("POPE image dir:", pope_image_dir)
+
+    samples = []
+    for category in ["adversarial", "popular", "random"]:
+        path = pope_annotations_dir / f"coco_pope_{category}.json"
+        rows = read_jsonl(path)
+        for row in rows:
+            image_path = pope_image_dir / row["image"]
+            if not image_path.exists():
+                raise FileNotFoundError(f"Missing POPE image: {image_path}")
+            samples.append({
+                "question_id": f"{category}_{row['question_id']}",
+                "pope_question_id": row["question_id"],
+                "pope_category": category,
+                "question": row["text"],
+                "prompt": row["text"],
+                "image": row["image"],
+                "image_path": str(image_path),
+                "ground_truth": row["label"],
+            })
+
+    if len(samples) < POPE_STAGE8_SUBSET_N:
+        raise RuntimeError(f"Only found {len(samples)} valid POPE samples, expected {POPE_STAGE8_SUBSET_N}.")
+    rng = random.Random(STAGE8_SUBSET_SEED)
+    selected = rng.sample(sorted(samples, key=lambda item: item["question_id"]), POPE_STAGE8_SUBSET_N)
+    selected.sort(key=lambda item: item["question_id"])
+    write_jsonl(SUBSET_PATH, selected)
+    return selected, {
+        "eligible_seen": len(samples),
+        "subset_seed": STAGE8_SUBSET_SEED,
+        "subset_size": POPE_STAGE8_SUBSET_N,
+        "subset_file": str(SUBSET_PATH),
+        "category_counts": {
+            category: sum(1 for item in selected if item["pope_category"] == category)
+            for category in ["adversarial", "popular", "random"]
+        },
+    }
+
+
+# ----- Failure-mining data, optional targeted stress test -----
+
+def build_failure_mining_samples():
+    if not FAILURE_MINING_CSV.exists():
+        raise FileNotFoundError(f"Missing failure-mining CSV: {FAILURE_MINING_CSV}")
+
     with open(FAILURE_MINING_CSV, "r", encoding="utf-8", newline="") as f:
         source_rows = list(csv.DictReader(f))
 
@@ -371,11 +662,8 @@ def load_failure_mining_samples():
     missing_columns = sorted(required_columns - actual_columns)
     if missing_columns:
         raise RuntimeError(f"Failure-mining CSV is missing columns: {missing_columns}")
-
-    if len(source_rows) != EXPECTED_SAMPLE_COUNT:
-        raise RuntimeError(
-            f"Expected {EXPECTED_SAMPLE_COUNT} failure-mining rows, found {len(source_rows)}"
-        )
+    if len(source_rows) != 100:
+        raise RuntimeError(f"Expected 100 failure-mining rows, found {len(source_rows)}")
 
     seen_ids = set()
     samples = []
@@ -399,100 +687,54 @@ def load_failure_mining_samples():
 
         samples.append({
             "case_id": case_id,
-            "dataset": row["dataset"].strip(),
+            "question_id": case_id,
+            "dataset_source": row["dataset"].strip(),
             "image_path": str(image_path),
             "source_image_path": relative_image_path.as_posix(),
             "question": question,
-            "prompt": question + SHORT_ANSWER_SUFFIX,
+            "prompt": question + FAILURE_MINING_SHORT_ANSWER_SUFFIX,
             "ground_truth": ground_truth,
             "question_type": row["question_type"].strip(),
             "note": row.get("note", "").strip(),
         })
 
-    return samples, source_rows
+    write_jsonl(SUBSET_PATH, samples)
+    return samples, {
+        "eligible_seen": len(samples),
+        "subset_seed": STAGE8_SUBSET_SEED,
+        "subset_size": len(samples),
+        "subset_file": str(SUBSET_PATH),
+        "source_csv": str(FAILURE_MINING_CSV),
+        "dataset_counts": dict(Counter(row["dataset_source"] for row in samples)),
+        "question_type_counts": dict(Counter(row["question_type"] for row in samples)),
+    }
 
 
-FAILURE_MINING_SAMPLES, FAILURE_MINING_SOURCE_ROWS = load_failure_mining_samples()
-write_csv(
-    DATASET_SNAPSHOT_PATH,
-    FAILURE_MINING_SOURCE_ROWS,
-    list(FAILURE_MINING_SOURCE_ROWS[0].keys()),
-)
+def build_stage8_samples():
+    if CURRENT_RUN.dataset == "gqa":
+        samples, stats = build_gqa_samples()
+    elif CURRENT_RUN.dataset == "pope":
+        samples, stats = build_pope_samples()
+    elif CURRENT_RUN.dataset == "failure_mining":
+        samples, stats = build_failure_mining_samples()
+    else:
+        raise ValueError(f"Unsupported Stage 8 subset dataset: {CURRENT_RUN.dataset}")
 
-print("Failure-mining sample count:", len(FAILURE_MINING_SAMPLES))
-print("Dataset distribution:", dict(Counter(row["dataset"] for row in FAILURE_MINING_SAMPLES)))
-print("Question-type distribution:", dict(Counter(row["question_type"] for row in FAILURE_MINING_SAMPLES)))
-print("Selected run:", CURRENT_RUN.run_id)
+    expected_size = expected_sample_count(CURRENT_RUN.dataset)
+    if len(samples) != expected_size:
+        raise RuntimeError(f"{CURRENT_RUN.dataset} subset has {len(samples)} samples; expected {expected_size}")
+    return samples, stats
+
+
+STAGE8_SAMPLES, STAGE8_SAMPLE_STATS = build_stage8_samples()
+
+print("Current run:", CURRENT_RUN.run_id)
+print("Dataset:", CURRENT_RUN.dataset)
+print("Subset count:", len(STAGE8_SAMPLES))
+print("Subset stats:", STAGE8_SAMPLE_STATS)
+print("Subset path:", SUBSET_PATH)
 print("Output root:", OUTPUT_ROOT)
 print("Download zip:", DOWNLOAD_ZIP)
-
-
-# ----- Answer scoring -----
-
-NUMBER_WORDS = {
-    "zero": "0",
-    "one": "1",
-    "two": "2",
-    "three": "3",
-    "four": "4",
-    "five": "5",
-    "six": "6",
-    "seven": "7",
-    "eight": "8",
-    "nine": "9",
-    "ten": "10",
-}
-
-
-def normalize_token(token):
-    token = NUMBER_WORDS.get(token, token)
-    if (
-        len(token) > 3
-        and token.endswith("s")
-        and not token.endswith(("ss", "us", "is"))
-    ):
-        token = token[:-1]
-    return token
-
-
-def normalize_answer(text):
-    text = str(text).strip().lower()
-    text = re.sub(r"[^a-z0-9 ]+", " ", text)
-    tokens = re.sub(r"\s+", " ", text).strip().split()
-    return " ".join(normalize_token(token) for token in tokens)
-
-
-def binary_label(text):
-    words = normalize_answer(text).split()
-    if "no" in words or "not" in words or "never" in words:
-        return "no"
-    if "yes" in words:
-        return "yes"
-    return ""
-
-
-def exact_or_phrase_match(prediction, target):
-    pred = normalize_answer(prediction)
-    gold = normalize_answer(target)
-    if not pred or not gold:
-        return False
-    if gold in {"yes", "no"}:
-        return binary_label(pred) == gold
-    if pred == gold:
-        return True
-    return re.search(rf"(?:^| ){re.escape(gold)}(?: |$)", pred) is not None
-
-
-def classify_failure(prediction, target):
-    pred = normalize_answer(prediction)
-    gold = normalize_answer(target)
-    if exact_or_phrase_match(prediction, target):
-        return "correct"
-    if not pred:
-        return "empty_answer"
-    if gold in {"yes", "no"}:
-        return "binary_mismatch"
-    return "open_answer_mismatch"
 
 
 # ----- Inference -----
@@ -528,14 +770,8 @@ def run_generation(row, run):
     sparse_core = model.get_model()
     original_pruning_loc = list(getattr(sparse_core, "pruning_loc", SPARSE_PRUNING_LOC))
 
-    if run.selection_method == "dense":
-        sparse_core.pruning_loc = []
-        sparse_core.last_sparse_metadata = {}
-        generate_selection_method = "topk"
-    else:
-        sparse_core.pruning_loc = SPARSE_PRUNING_LOC
-        sparse_core.last_sparse_metadata = {}
-        generate_selection_method = run.selection_method
+    sparse_core.pruning_loc = SPARSE_PRUNING_LOC
+    sparse_core.last_sparse_metadata = {}
 
     try:
         generation_kwargs = {
@@ -553,9 +789,11 @@ def run_generation(row, run):
                 images=images_tensor,
                 image_sizes=[image.size],
                 retained_tokens=run.retained_tokens,
-                selection_method=generate_selection_method,
+                selection_method=run.selection_method,
                 threshold_tau=run.threshold_tau,
-                candidate_pool_factor=CANDIDATE_POOL_FACTOR,
+                candidate_pool_factor=run.candidate_pool_factor,
+                lambda_relevance=run.lambda_relevance,
+                record_selection_similarity=run.record_selection_similarity,
                 **generation_kwargs,
             )
         answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
@@ -563,40 +801,33 @@ def run_generation(row, run):
     finally:
         sparse_core.pruning_loc = original_pruning_loc
 
-    if run.selection_method == "dense":
-        metadata = {
-            "selection_method": "dense",
-            "retained_tokens": 576,
-            "retained_token_count": 576,
-            "layer_token_stats": [],
-        }
-    else:
-        metadata.setdefault("selection_method", run.selection_method)
-        metadata.setdefault("retained_tokens", run.retained_tokens)
-        metadata.setdefault("threshold_tau", run.threshold_tau)
-        metadata.setdefault("candidate_pool_factor", CANDIDATE_POOL_FACTOR)
+    metadata.setdefault("selection_method", run.selection_method)
+    metadata.setdefault("retained_tokens", run.retained_tokens)
+    metadata.setdefault("threshold_tau", run.threshold_tau)
+    metadata.setdefault("candidate_pool_factor", run.candidate_pool_factor)
+    metadata.setdefault("lambda_relevance", run.lambda_relevance)
+    metadata.setdefault("record_selection_similarity", run.record_selection_similarity)
 
     return answer, metadata
 
 
-# ----- Metadata validation -----
+# ----- Validation and output -----
 
 def validate_metadata(run, metadata, sample_id):
     problems = []
     if metadata.get("selection_method") != run.selection_method:
-        problems.append(
-            f"selection_method={metadata.get('selection_method')} expected {run.selection_method}"
-        )
+        problems.append(f"selection_method={metadata.get('selection_method')} expected {run.selection_method}")
 
     if int(metadata.get("retained_tokens", -1)) != int(run.retained_tokens):
-        problems.append(
-            f"retained_tokens={metadata.get('retained_tokens')} expected {run.retained_tokens}"
-        )
+        problems.append(f"retained_tokens={metadata.get('retained_tokens')} expected {run.retained_tokens}")
 
-    if run.selection_method == "dense":
-        if metadata.get("retained_token_count") != 576:
-            problems.append("dense retained_token_count should be 576")
-        return [f"{sample_id}: {problem}" for problem in problems]
+    if int(metadata.get("candidate_pool_factor", -1)) != int(run.candidate_pool_factor):
+        problems.append(f"candidate_pool_factor={metadata.get('candidate_pool_factor')} expected {run.candidate_pool_factor}")
+
+    if run.selection_method == "mmr":
+        actual_lambda = float(metadata.get("lambda_relevance", -1))
+        if abs(actual_lambda - run.lambda_relevance) > 1e-9:
+            problems.append(f"lambda_relevance={actual_lambda} expected {run.lambda_relevance}")
 
     layer_stats = metadata.get("layer_token_stats")
     if not isinstance(layer_stats, list) or not layer_stats:
@@ -605,58 +836,73 @@ def validate_metadata(run, metadata, sample_id):
 
     if metadata.get("retained_token_count") is None:
         problems.append("missing retained_token_count")
-    if not isinstance(metadata.get("selected_original_token_indices"), list):
+
+    selected_original = metadata.get("selected_original_token_indices")
+    if not isinstance(selected_original, list):
         problems.append("missing selected_original_token_indices")
+    else:
+        bad_indices = [idx for idx in selected_original if not isinstance(idx, int) or idx < 0 or idx > 575]
+        if bad_indices:
+            problems.append(f"selected_original_token_indices outside 0-575: {bad_indices[:5]}")
 
     for layer in layer_stats:
         if layer.get("selection_method") != run.selection_method:
-            problems.append(
-                f"layer {layer.get('layer_idx')} used {layer.get('selection_method')}"
-            )
+            problems.append(f"layer {layer.get('layer_idx')} used {layer.get('selection_method')}")
         selected_count = int(layer.get("selected_count", -1))
         per_layer_budget = int(layer.get("per_layer_budget", -1))
         if selected_count < 0 or per_layer_budget < 0:
-            problems.append(
-                f"layer {layer.get('layer_idx')} has invalid selected_count or budget"
-            )
+            problems.append(f"layer {layer.get('layer_idx')} has invalid selected_count or budget")
         if run.selection_method == "threshold_fixed" and selected_count != per_layer_budget:
-            problems.append(
-                f"threshold_fixed layer {layer.get('layer_idx')} selected "
-                f"{selected_count}, budget {per_layer_budget}"
-            )
-        if run.selection_method == "threshold_adaptive" and "threshold_tau" not in layer:
-            problems.append(
-                f"threshold_adaptive layer {layer.get('layer_idx')} missing threshold_tau"
-            )
+            problems.append(f"threshold_fixed layer {layer.get('layer_idx')} selected {selected_count}, budget {per_layer_budget}")
+        if run.record_selection_similarity and layer.get("pairwise_similarity_available") is not True:
+            problems.append(f"layer {layer.get('layer_idx')} missing pairwise similarity stats")
 
     return [f"{sample_id}: {problem}" for problem in problems]
 
 
-# ----- Prediction and metrics -----
-
 def prediction_record(row, run, answer, metadata, elapsed):
-    is_correct = exact_or_phrase_match(answer, row["ground_truth"])
-    return {
-        "case_id": row["case_id"],
-        "question_id": row["case_id"],
+    base = {
+        "question_id": row["question_id"],
         "prompt": row["prompt"],
-        "raw_question": row["question"],
         "text": answer,
-        "normalized_text": normalize_answer(answer),
         "answer_id": shortuuid.uuid(),
         "model_id": MODEL_PATH,
-        "dataset": row["dataset"],
-        "image_path": row["source_image_path"],
+        "dataset": run.dataset,
+        "image_path": row["image_path"],
         "ground_truth": row["ground_truth"],
-        "normalized_ground_truth": normalize_answer(row["ground_truth"]),
-        "question_type": row["question_type"],
-        "note": row["note"],
-        "is_correct": is_correct,
-        "failure_label": classify_failure(answer, row["ground_truth"]),
         "run_id": run.run_id,
+        "subset_seed": STAGE8_SUBSET_SEED,
+        "subset_size": len(STAGE8_SAMPLES),
         "metadata": metadata,
         "inference_seconds": elapsed,
     }
+    if run.dataset == "gqa":
+        base.update({
+            "raw_question": row["question"],
+            "image_id": row["image_id"],
+            "normalized_text": normalize_gqa_answer(answer),
+            "normalized_ground_truth": normalize_gqa_answer(row["ground_truth"]),
+            "is_correct": normalize_gqa_answer(answer) == normalize_gqa_answer(row["ground_truth"]),
+            "structural_type": row.get("structural_type", ""),
+            "semantic_type": row.get("semantic_type", ""),
+            "detailed_type": row.get("detailed_type", ""),
+        })
+    elif run.dataset == "pope":
+        base.update({
+            "pope_question_id": row["pope_question_id"],
+            "pope_category": row["pope_category"],
+            "image": row["image"],
+        })
+    elif run.dataset == "failure_mining":
+        base.update({
+            "case_id": row["case_id"],
+            "source_dataset": row["dataset_source"],
+            "source_image_path": row["source_image_path"],
+            "question_type": row["question_type"],
+            "note": row.get("note", ""),
+            "is_correct": exact_or_phrase_match(answer, row["ground_truth"]),
+        })
+    return base
 
 
 def sparse_stats_for_predictions(run, predictions):
@@ -668,151 +914,99 @@ def sparse_stats_for_predictions(run, predictions):
     if not counts:
         return {}
     return {
-        "selection_method": run.selection_method,
-        "retained_tokens": run.retained_tokens,
-        "threshold_tau": run.threshold_tau,
-        "candidate_pool_factor": CANDIDATE_POOL_FACTOR,
-        "sample_count": len(counts),
         "average_retained_tokens": sum(counts) / len(counts),
         "min_retained_tokens": min(counts),
         "max_retained_tokens": max(counts),
     }
 
 
-def aggregate_metrics(predictions):
-    correct = sum(bool(item["is_correct"]) for item in predictions)
-    counts = Counter(item["failure_label"] for item in predictions)
-    total = len(predictions)
-    return {
-        "sample_count": total,
-        "accuracy": correct / total if total else 0.0,
-        "correct": correct,
-        "incorrect": total - correct,
-        "correct_count": counts.get("correct", 0),
-        "binary_mismatch_count": counts.get("binary_mismatch", 0),
-        "open_answer_mismatch_count": counts.get("open_answer_mismatch", 0),
-        "empty_answer_count": counts.get("empty_answer", 0),
-    }
-
-
-def metric_row(run, predictions, scope, scope_value):
-    metrics = aggregate_metrics(predictions)
-    stats = sparse_stats_for_predictions(run, predictions)
-    return {
+def metric_rows_for_run(run, predictions):
+    metrics = compute_metrics(run.dataset, predictions)
+    row = {
         "run_id": run.run_id,
-        "dataset": "Failure-mining",
+        "dataset": run.dataset.upper(),
+        "ablation_role": run.ablation_role,
         "method": run.method_label,
         "selection_method": run.selection_method,
         "token_setting": run.retained_tokens,
-        "threshold_tau": run.threshold_tau if run.selection_method == "threshold_adaptive" else "",
-        "scope": scope,
-        "scope_value": scope_value,
-        **metrics,
-        "average_retained_tokens": stats.get("average_retained_tokens", ""),
-        "min_retained_tokens": stats.get("min_retained_tokens", ""),
-        "max_retained_tokens": stats.get("max_retained_tokens", ""),
+        "threshold_tau": run.threshold_tau if run.selection_method.startswith("threshold") else "",
+        "candidate_pool_factor": run.candidate_pool_factor,
+        "lambda_relevance": run.lambda_relevance,
+        "record_selection_similarity": run.record_selection_similarity,
+        "sample_count": len(predictions),
+        "subset_seed": STAGE8_SUBSET_SEED,
+        "subset_size": len(STAGE8_SAMPLES),
+        "accuracy": metrics.get("accuracy", ""),
+        "correct": metrics.get("correct", ""),
+        "total": metrics.get("total", ""),
     }
+    if run.dataset == "pope":
+        row.update({
+            "f1": metrics.get("f1", ""),
+            "precision": metrics.get("precision", ""),
+            "recall": metrics.get("recall", ""),
+            "tp": metrics.get("tp", ""),
+            "tn": metrics.get("tn", ""),
+            "fp": metrics.get("fp", ""),
+            "fn": metrics.get("fn", ""),
+        })
+    row.update(sparse_stats_for_predictions(run, predictions))
+    return [row]
 
 
-def metric_rows_for_run(run, predictions):
-    rows = [metric_row(run, predictions, "overall", "all")]
-
-    for dataset_name in sorted({item["dataset"] for item in predictions}):
-        group = [item for item in predictions if item["dataset"] == dataset_name]
-        rows.append(metric_row(run, group, "dataset", dataset_name))
-
-    for question_type in sorted({item["question_type"] for item in predictions}):
-        group = [item for item in predictions if item["question_type"] == question_type]
-        rows.append(metric_row(run, group, "question_type", question_type))
-
-    return rows
+def write_run_metric_csv(run, predictions):
+    output_path = RESULTS_ROOT / run.metric_relpath
+    rows = metric_rows_for_run(run, predictions)
+    fieldnames = sorted({key for row in rows for key in row.keys()})
+    write_csv(output_path, rows, fieldnames)
+    return output_path, rows
 
 
-def case_analysis_rows(predictions):
-    return [
-        {
-            "case_id": item["case_id"],
-            "dataset": item["dataset"],
-            "question_type": item["question_type"],
-            "image_path": item["image_path"],
-            "question": item["raw_question"],
-            "ground_truth": item["ground_truth"],
-            "prediction": item["text"],
-            "is_correct": item["is_correct"],
-            "failure_label": item["failure_label"],
-            "retained_token_count": item["metadata"].get("retained_token_count", ""),
-            "inference_seconds": item["inference_seconds"],
-            "manual_failure_cause": "",
-            "review_notes": "",
-        }
-        for item in predictions
-    ]
-
-
-def write_run_outputs(run, predictions):
-    metric_path = RESULTS_ROOT / run.output_relpath
-    metric_rows = metric_rows_for_run(run, predictions)
-    metric_fields = list(metric_rows[0].keys())
-    write_csv(metric_path, metric_rows, metric_fields)
-
-    analysis_path = metric_path.with_name(metric_path.stem + "_case_analysis.csv")
-    analysis_rows = case_analysis_rows(predictions)
-    write_csv(analysis_path, analysis_rows, list(analysis_rows[0].keys()))
-
-    stats_path = ""
-    if run.selection_method == "threshold_adaptive":
-        stats = sparse_stats_for_predictions(run, predictions)
-        stats_path = metric_path.with_name(metric_path.stem + "_sparse_stats.json")
-        with open(stats_path, "w", encoding="utf-8") as f:
-            json.dump(stats, f, indent=2)
-
-    return metric_path, analysis_path, stats_path, metric_rows
-
-
-def write_failure_mining_summary(manifest):
+def write_stage8_summary(manifest):
     summary_rows = []
     for item in manifest:
-        overall = next(
-            row for row in item["metrics"]
-            if row["scope"] == "overall" and row["scope_value"] == "all"
-        )
+        metric = item["metrics"][0] if item.get("metrics") else {}
         summary_rows.append({
             "run_id": item["run_id"],
-            "dataset": "Failure-mining",
+            "dataset": item["dataset"],
+            "ablation_role": item["ablation_role"],
             "method": item["method"],
             "selection_method": item["selection_method"],
             "token_setting": item["retained_tokens"],
-            "threshold_tau": (
-                item["threshold_tau"]
-                if item["selection_method"] == "threshold_adaptive"
-                else ""
-            ),
+            "threshold_tau": item["threshold_tau"] if item["selection_method"].startswith("threshold") else "",
+            "candidate_pool_factor": item["candidate_pool_factor"],
+            "lambda_relevance": item["lambda_relevance"],
+            "record_selection_similarity": item["record_selection_similarity"],
             "sample_count": item["sample_count"],
-            "accuracy": overall["accuracy"],
-            "correct": overall["correct"],
-            "incorrect": overall["incorrect"],
-            "binary_mismatch_count": overall["binary_mismatch_count"],
-            "open_answer_mismatch_count": overall["open_answer_mismatch_count"],
-            "empty_answer_count": overall["empty_answer_count"],
-            "average_retained_tokens": overall["average_retained_tokens"],
-            "min_retained_tokens": overall["min_retained_tokens"],
-            "max_retained_tokens": overall["max_retained_tokens"],
+            "subset_seed": item["subset_seed"],
+            "subset_size": item["subset_size"],
+            "accuracy": metric.get("accuracy", ""),
+            "f1": metric.get("f1", ""),
+            "correct": metric.get("correct", ""),
+            "total": metric.get("total", ""),
+            "average_retained_tokens": metric.get("average_retained_tokens", ""),
+            "min_retained_tokens": metric.get("min_retained_tokens", ""),
+            "max_retained_tokens": metric.get("max_retained_tokens", ""),
             "prediction_file": item["prediction_file"],
             "metric_file": item["metric_file"],
-            "case_analysis_file": item["case_analysis_file"],
+            "subset_file": item["subset_file"],
             "log_file": item["log_file"],
             "status": item["status"],
         })
 
-    fieldnames = list(summary_rows[0].keys())
-    write_csv(SUMMARY_DIR / "failure_mining_summary.csv", summary_rows, fieldnames)
-    write_csv(SUMMARY_DIR / "final_evaluation_table.csv", summary_rows, fieldnames)
+    fieldnames = [
+        "run_id", "dataset", "ablation_role", "method", "selection_method",
+        "token_setting", "threshold_tau", "candidate_pool_factor",
+        "lambda_relevance", "record_selection_similarity", "sample_count",
+        "subset_seed", "subset_size", "accuracy", "f1", "correct", "total",
+        "average_retained_tokens", "min_retained_tokens", "max_retained_tokens",
+        "prediction_file", "metric_file", "subset_file", "log_file", "status",
+    ]
+    write_csv(SUMMARY_DIR / "stage8_subset_summary.csv", summary_rows, fieldnames)
     return summary_rows
 
 
-# ----- Runner -----
-
-def run_one_failure_mining_experiment(run):
+def run_one_stage8_experiment(run):
     predictions = []
     metadata_errors = []
     log_path = LOG_DIR / f"{run.run_id}.jsonl"
@@ -822,38 +1016,41 @@ def run_one_failure_mining_experiment(run):
         log_file.write(json.dumps({
             "event": "run_start",
             "run_id": run.run_id,
+            "dataset": run.dataset,
+            "ablation_role": run.ablation_role,
             "selection_method": run.selection_method,
             "retained_tokens": run.retained_tokens,
             "threshold_tau": run.threshold_tau,
-            "sample_count": len(FAILURE_MINING_SAMPLES),
-            "dataset_snapshot": str(DATASET_SNAPSHOT_PATH),
+            "candidate_pool_factor": run.candidate_pool_factor,
+            "lambda_relevance": run.lambda_relevance,
+            "record_selection_similarity": run.record_selection_similarity,
+            "sample_count": len(STAGE8_SAMPLES),
+            "subset_seed": STAGE8_SUBSET_SEED,
+            "subset_path": str(SUBSET_PATH),
             "time": time.time(),
         }) + "\n")
 
-        for sample_idx, row in enumerate(FAILURE_MINING_SAMPLES, start=1):
+        for sample_idx, row in enumerate(STAGE8_SAMPLES, start=1):
             start = time.time()
             answer, metadata = run_generation(row, run)
             elapsed = time.time() - start
             record = prediction_record(row, run, answer, metadata, elapsed)
             predictions.append(record)
-            metadata_errors.extend(validate_metadata(run, metadata, row["case_id"]))
+            metadata_errors.extend(validate_metadata(run, metadata, row["question_id"]))
+
+            if sample_idx % CHECKPOINT_EVERY == 0 or sample_idx == len(STAGE8_SAMPLES):
+                print(f"  {run.run_id}: {sample_idx}/{len(STAGE8_SAMPLES)} samples")
+                write_jsonl(prediction_path, predictions)
 
             log_file.write(json.dumps({
                 "event": "sample_done",
                 "run_id": run.run_id,
                 "sample_index": sample_idx,
-                "case_id": row["case_id"],
+                "question_id": row["question_id"],
                 "seconds": elapsed,
                 "retained_token_count": metadata.get("retained_token_count"),
-                "is_correct": record["is_correct"],
-                "failure_label": record["failure_label"],
             }) + "\n")
             log_file.flush()
-
-            if sample_idx % CHECKPOINT_EVERY == 0 or sample_idx == len(FAILURE_MINING_SAMPLES):
-                print(f"  {run.run_id}: {sample_idx}/{len(FAILURE_MINING_SAMPLES)} samples")
-                write_jsonl(prediction_path, predictions)
-
             torch.cuda.empty_cache()
 
         log_file.write(json.dumps({
@@ -867,28 +1064,29 @@ def run_one_failure_mining_experiment(run):
     if metadata_errors:
         raise RuntimeError(
             f"{run.run_id} metadata validation failed:\n"
-            + "\n".join(metadata_errors[:20])
+            + "\n".join(metadata_errors[:30])
         )
 
     write_jsonl(prediction_path, predictions)
-    metric_path, analysis_path, stats_path, metric_rows = write_run_outputs(
-        run,
-        predictions,
-    )
+    metric_path, metric_rows = write_run_metric_csv(run, predictions)
 
     manifest_record = {
         "run_id": run.run_id,
-        "dataset": "failure_mining",
+        "dataset": run.dataset,
+        "ablation_role": run.ablation_role,
         "method": run.method_label,
         "selection_method": run.selection_method,
         "retained_tokens": run.retained_tokens,
         "threshold_tau": run.threshold_tau,
+        "candidate_pool_factor": run.candidate_pool_factor,
+        "lambda_relevance": run.lambda_relevance,
+        "record_selection_similarity": run.record_selection_similarity,
         "sample_count": len(predictions),
-        "dataset_snapshot": str(DATASET_SNAPSHOT_PATH),
+        "subset_seed": STAGE8_SUBSET_SEED,
+        "subset_size": len(STAGE8_SAMPLES),
+        "subset_file": str(SUBSET_PATH),
         "prediction_file": str(prediction_path),
         "metric_file": str(metric_path),
-        "case_analysis_file": str(analysis_path),
-        "adaptive_sparse_stats_file": str(stats_path) if stats_path else "",
         "log_file": str(log_path),
         "metrics": metric_rows,
         "status": "ok",
@@ -896,26 +1094,26 @@ def run_one_failure_mining_experiment(run):
     return manifest_record
 
 
-def run_failure_mining_experiment():
-    manifest = []
+def run_stage8_subset_experiment():
     start = time.time()
-    for index, run in enumerate(SELECTED_RUNS, start=1):
-        print(
-            f"[{index}/{len(SELECTED_RUNS)}] {run.run_id} "
-            f"({run.selection_method}, retained={run.retained_tokens}, "
-            f"tau={run.threshold_tau})"
-        )
-        record = run_one_failure_mining_experiment(run)
-        manifest.append(record)
-        with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
-            json.dump(manifest, f, indent=2)
-        print("  ok:", record["prediction_file"])
+    print(
+        f"Running {CURRENT_RUN.run_id} "
+        f"({CURRENT_RUN.dataset}, {CURRENT_RUN.selection_method}, "
+        f"retained={CURRENT_RUN.retained_tokens}, pool={CURRENT_RUN.candidate_pool_factor}, "
+        f"lambda={CURRENT_RUN.lambda_relevance})"
+    )
+    record = run_one_stage8_experiment(CURRENT_RUN)
+    manifest = [record]
+    with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    summary_rows = write_stage8_summary(manifest)
 
-    summary_rows = write_failure_mining_summary(manifest)
     print()
-    print("Failure-mining experiment complete.")
-    print("Runs:", len(manifest))
-    print("Samples:", len(FAILURE_MINING_SAMPLES))
+    print("Stage 8 subset experiment complete.")
+    print("Run:", CURRENT_RUN.run_id)
+    print("Dataset:", CURRENT_RUN.dataset)
+    print("Samples:", len(STAGE8_SAMPLES))
+    print("Subset seed:", STAGE8_SUBSET_SEED)
     print("Output root:", OUTPUT_ROOT)
     print("Manifest:", MANIFEST_PATH)
     print("Summary rows:", len(summary_rows))
@@ -945,14 +1143,18 @@ print("Loaded:", MODEL_PATH)
 print("Conversation mode:", CONV_MODE)
 print("Context length:", context_len)
 print("Max new tokens:", MAX_NEW_TOKENS)
-print("Failure-mining sample count:", len(FAILURE_MINING_SAMPLES))
-print("Selected run:", CURRENT_RUN.run_id)
+print("Current run:", CURRENT_RUN.run_id)
+print("Dataset:", CURRENT_RUN.dataset)
+print("Subset count:", len(STAGE8_SAMPLES))
+print("Candidate pool factor:", CURRENT_RUN.candidate_pool_factor)
+print("Lambda relevance:", CURRENT_RUN.lambda_relevance)
+print("Record pairwise similarity:", CURRENT_RUN.record_selection_similarity)
 print("Load seconds:", round(time.time() - load_start, 2))
 ```
 
-Cell 6: Run selected failure-mining experiment
+Cell 6: Run selected Stage 8 subset experiment
 ```python
-manifest = run_failure_mining_experiment()
+manifest = run_stage8_subset_experiment()
 ```
 
 Cell 7: Zip current run outputs for download

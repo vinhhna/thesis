@@ -567,6 +567,12 @@ def build_failure_recovery_summary(
             }
 
     for run_id, run in sorted(runs.items()):
+        if "STAGE8" in run_id:
+            # Stage 8 subset runs use 500-sample GQA/POPE subsets and optional
+            # targeted failure-mining probes. Their recovery/regression numbers
+            # are calculated in build_stage8_ablation_results.py against the
+            # matching Stage 8 subset baseline, not in this full-run summary.
+            continue
         dataset = run["dataset"]
         selection_method = run["selection_method"]
         token = run["token_setting"]

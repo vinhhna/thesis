@@ -62,9 +62,21 @@ def missing_ablation_rows(rows: list[dict]) -> list[str]:
     return [
         row["run_id"]
         for row in rows
-        if row.get("ablation_role") == "ablation_variant"
+        if row.get("row_role", "").startswith("required_general")
         and row.get("run_available") != "true"
     ]
+
+
+def general_ablation_rows(rows: list[dict]) -> list[dict]:
+    return [
+        row
+        for row in rows
+        if row.get("ablation_role") in {"general_ablation_gqa", "general_ablation_pope"}
+    ]
+
+
+def optional_failure_ablation_rows(rows: list[dict]) -> list[dict]:
+    return [row for row in rows if row.get("ablation_role") == "targeted_failure_recovery"]
 
 
 def compare_failure_row(rows: list[dict], run_id: str) -> dict:
@@ -89,18 +101,25 @@ def build_markdown(
     pending_ablation = missing_ablation_rows(ablation_rows)
 
     lines = [
-        "# Stage 8 — Ablation and Auxiliary Metric Analysis",
+        "# Stage 8 - Ablation and Auxiliary Metric Analysis",
         "",
         "Stage 8 quantifies selected-token behavior because Stage 7 visualizations were mostly inconclusive. "
-        "The current outputs use all available saved prediction metadata for spatial coverage, selected-patch "
-        "overlap, and failure recovery. Pairwise hidden-state similarity is reported only when instrumented "
-        "Kaggle reruns provide the required metadata.",
+        "The revised ablation design uses deterministic 500-sample GQA and POPE subsets for general "
+        "hyperparameter evidence. Failure-mining is treated only as a secondary targeted recovery/stress-test "
+        "set because it is intentionally skewed toward difficult SparseVLM cases. Pairwise hidden-state "
+        "similarity is reported only when instrumented Kaggle reruns provide the required metadata.",
         "",
         "## Data status",
         "",
         f"- Detailed selected-token metric rows: {len(token_rows)}",
         f"- Pairwise similarity available: {'yes' if pairwise_ready else 'no'}",
-        f"- Pending planned Ours ablation runs: {len(pending_ablation)}",
+        f"- Pending required GQA/POPE Stage 8 subset runs: {len(pending_ablation)}",
+        f"- Optional failure-mining ablation rows tracked: {len(optional_failure_ablation_rows(ablation_rows))}",
+        "",
+        "The full Stage 5 benchmark tables remain the official benchmark results. Stage 8 subset results are "
+        "auxiliary mechanism and hyperparameter evidence, not replacement benchmark scores.",
+        "Spatial and overlap summaries may still include existing full-run metadata; the GQA/POPE subset "
+        "ablation table is the place where Stage 8 subset accuracy and recovery are reported.",
         "",
     ]
 
@@ -186,6 +205,9 @@ def build_markdown(
     lines.extend([
         "## Failure recovery",
         "",
+        "The table below summarizes recovery behavior from saved full-run metadata. These rows should be read "
+        "separately from the Stage 8 GQA/POPE subset ablations.",
+        "",
     ])
     focus_rows = [
         row for row in failure_rows
@@ -228,24 +250,56 @@ def build_markdown(
     lines.extend([
         "## Ours ablation status",
         "",
+        "General ablation conclusions should be drawn from the GQA/POPE 500-sample subset rows, not from "
+        "failure-mining.",
+        "",
     ])
     lines.extend(md_table(
-        ablation_rows,
+        general_ablation_rows(ablation_rows),
         [
             "dataset",
             "run_id",
             "run_available",
             "ablation_role",
+            "row_role",
             "candidate_pool_factor",
             "lambda_relevance",
+            "subset_seed",
+            "subset_size",
             "accuracy",
             "f1",
             "mean_pairwise_similarity",
             "notes",
         ],
-        limit=30,
+        limit=40,
     ))
     lines.append("")
+
+    optional_rows = optional_failure_ablation_rows(ablation_rows)
+    if optional_rows:
+        lines.extend([
+            "### Optional failure-mining stress-test rows",
+            "",
+            "These rows are secondary targeted recovery checks and should not be used as representative "
+            "general ablation evidence.",
+            "",
+        ])
+        lines.extend(md_table(
+            optional_rows,
+            [
+                "dataset",
+                "run_id",
+                "run_available",
+                "candidate_pool_factor",
+                "lambda_relevance",
+                "accuracy",
+                "recovered_baseline_failures",
+                "net_gain",
+                "notes",
+            ],
+            limit=20,
+        ))
+        lines.append("")
 
     lines.extend([
         "## Threshold-Adaptive interpretation",
@@ -259,9 +313,10 @@ def build_markdown(
     ])
     if pairwise_ready:
         lines.append(
-            "Stage 8 can compare answer-level performance with selected-token similarity, spatial coverage, and "
-            "baseline overlap. Any redundancy-reduction claim should be conditioned on the actual pairwise similarity "
-            "direction and whether it aligns with accuracy or failure recovery."
+            "Stage 8 can compare answer-level behavior on the GQA/POPE 500-sample subsets with selected-token "
+            "similarity, spatial coverage, and baseline overlap. Any redundancy-reduction claim should be "
+            "conditioned on the actual pairwise similarity direction and whether it aligns with subset accuracy "
+            "or targeted failure recovery."
         )
     else:
         lines.append(
@@ -271,8 +326,13 @@ def build_markdown(
         )
     if pending_ablation:
         lines.append(
-            "The Ours hyperparameter conclusion is also pending until the planned 64-token candidate-pool/lambda "
-            "ablation runs are imported."
+            "The Ours hyperparameter conclusion is pending until the required GQA/POPE 500-sample 64-token "
+            "candidate-pool/lambda ablation runs are imported."
+        )
+    else:
+        lines.append(
+            "Once all required GQA/POPE rows are available, the Stage 8 conclusion should separate general "
+            "hyperparameter behavior from any optional failure-mining recovery behavior."
         )
     lines.append("")
     return "\n".join(lines)
