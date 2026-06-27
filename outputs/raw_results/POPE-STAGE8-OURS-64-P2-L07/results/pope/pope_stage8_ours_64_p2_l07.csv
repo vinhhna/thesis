@@ -1,0 +1,2 @@
+ablation_role,accuracy,average_retained_tokens,candidate_pool_factor,correct,dataset,f1,fn,fp,lambda_relevance,max_retained_tokens,method,min_retained_tokens,precision,recall,record_selection_similarity,run_id,sample_count,selection_method,subset_seed,subset_size,threshold_tau,tn,token_setting,total,tp
+general_ablation_pope,0.842,18.0,2,421,POPE,0.8483685220729366,30,49,0.7,18,Ours,18,0.8185185185185185,0.8804780876494024,True,POPE-STAGE8-OURS-64-P2-L07,500,mmr,20260610,500,,200,64,500,221

@@ -1,0 +1,52 @@
+[
+  {
+    "run_id": "POPE-STAGE8-THRESHOLD-FIXED-64",
+    "dataset": "pope",
+    "ablation_role": "general_ablation_pope",
+    "method": "Threshold-Fixed-k",
+    "selection_method": "threshold_fixed",
+    "retained_tokens": 64,
+    "threshold_tau": 0.85,
+    "candidate_pool_factor": 2,
+    "lambda_relevance": 0.8,
+    "record_selection_similarity": true,
+    "sample_count": 500,
+    "subset_seed": 20260610,
+    "subset_size": 500,
+    "subset_file": "/kaggle/working/stage8_subset_runs/POPE-STAGE8-THRESHOLD-FIXED-64/stage8_pope_subset_seed20260610_n500.jsonl",
+    "prediction_file": "/kaggle/working/stage8_subset_runs/POPE-STAGE8-THRESHOLD-FIXED-64/results/pope/predictions/pope_stage8_threshold_fixed_64.jsonl",
+    "metric_file": "/kaggle/working/stage8_subset_runs/POPE-STAGE8-THRESHOLD-FIXED-64/results/pope/pope_stage8_threshold_fixed_64.csv",
+    "log_file": "/kaggle/working/stage8_subset_runs/POPE-STAGE8-THRESHOLD-FIXED-64/logs/POPE-STAGE8-THRESHOLD-FIXED-64.jsonl",
+    "metrics": [
+      {
+        "run_id": "POPE-STAGE8-THRESHOLD-FIXED-64",
+        "dataset": "POPE",
+        "ablation_role": "general_ablation_pope",
+        "method": "Threshold-Fixed-k",
+        "selection_method": "threshold_fixed",
+        "token_setting": 64,
+        "threshold_tau": 0.85,
+        "candidate_pool_factor": 2,
+        "lambda_relevance": 0.8,
+        "record_selection_similarity": true,
+        "sample_count": 500,
+        "subset_seed": 20260610,
+        "subset_size": 500,
+        "accuracy": 0.846,
+        "correct": 423,
+        "total": 500,
+        "f1": 0.8527724665391968,
+        "precision": 0.8198529411764706,
+        "recall": 0.8884462151394422,
+        "tp": 223,
+        "tn": 200,
+        "fp": 49,
+        "fn": 28,
+        "average_retained_tokens": 18.0,
+        "min_retained_tokens": 18,
+        "max_retained_tokens": 18
+      }
+    ],
+    "status": "ok"
+  }
+]

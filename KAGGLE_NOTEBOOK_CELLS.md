@@ -5,10 +5,12 @@ These cells run one Stage 8 ablation/comparison experiment on a deterministic 50
 Current configured run:
 
 ```text
-GQA-STAGE8-SPARSE-ORIG-64
+POPE-STAGE8-SPARSE-ORIG-64
 ```
 
 Change only `RUN_ID_TO_RUN` in Cell 4 for the next Kaggle session. Each run writes to a unique output folder and creates one zip file under `/kaggle/working`.
+
+This notebook is currently configured for the POPE Stage 8 subset runs. Use the POPE run list below as the working order, then change `RUN_ID_TO_RUN` to the next POPE run after each Kaggle download.
 
 Important: Cell 1 clones from GitHub. Before running this on Kaggle, push the Stage 8 code changes that add `lambda_relevance` and `record_selection_similarity`.
 
@@ -324,7 +326,7 @@ STAGE8_RUNS = [
 ]
 
 # Change this value for each Kaggle session. Keep exactly one run ID here.
-RUN_ID_TO_RUN = "GQA-STAGE8-SPARSE-ORIG-64"
+RUN_ID_TO_RUN = "POPE-STAGE8-SPARSE-ORIG-64"
 
 RUN_BY_ID = {run.run_id: run for run in STAGE8_RUNS}
 if RUN_ID_TO_RUN not in RUN_BY_ID:

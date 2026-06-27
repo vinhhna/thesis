@@ -1,0 +1,45 @@
+[
+  {
+    "run_id": "FM-STAGE8-OURS-64-P3-L07",
+    "dataset": "failure_mining",
+    "ablation_role": "targeted_failure_recovery",
+    "method": "Ours",
+    "selection_method": "mmr",
+    "retained_tokens": 64,
+    "threshold_tau": 0.85,
+    "candidate_pool_factor": 3,
+    "lambda_relevance": 0.7,
+    "record_selection_similarity": true,
+    "sample_count": 100,
+    "subset_seed": 20260610,
+    "subset_size": 100,
+    "subset_file": "/kaggle/working/stage8_subset_runs/FM-STAGE8-OURS-64-P3-L07/stage8_failure_mining_subset_seed20260610_n100.jsonl",
+    "prediction_file": "/kaggle/working/stage8_subset_runs/FM-STAGE8-OURS-64-P3-L07/results/failure_mining/predictions/fm_stage8_ours_64_p3_l07.jsonl",
+    "metric_file": "/kaggle/working/stage8_subset_runs/FM-STAGE8-OURS-64-P3-L07/results/failure_mining/fm_stage8_ours_64_p3_l07.csv",
+    "log_file": "/kaggle/working/stage8_subset_runs/FM-STAGE8-OURS-64-P3-L07/logs/FM-STAGE8-OURS-64-P3-L07.jsonl",
+    "metrics": [
+      {
+        "run_id": "FM-STAGE8-OURS-64-P3-L07",
+        "dataset": "FAILURE_MINING",
+        "ablation_role": "targeted_failure_recovery",
+        "method": "Ours",
+        "selection_method": "mmr",
+        "token_setting": 64,
+        "threshold_tau": "",
+        "candidate_pool_factor": 3,
+        "lambda_relevance": 0.7,
+        "record_selection_similarity": true,
+        "sample_count": 100,
+        "subset_seed": 20260610,
+        "subset_size": 100,
+        "accuracy": 0.73,
+        "correct": 73,
+        "total": 100,
+        "average_retained_tokens": 18.0,
+        "min_retained_tokens": 18,
+        "max_retained_tokens": 18
+      }
+    ],
+    "status": "ok"
+  }
+]

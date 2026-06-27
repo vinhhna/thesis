@@ -1,0 +1,2 @@
+ablation_role,accuracy,average_retained_tokens,candidate_pool_factor,correct,dataset,f1,fn,fp,lambda_relevance,max_retained_tokens,method,min_retained_tokens,precision,recall,record_selection_similarity,run_id,sample_count,selection_method,subset_seed,subset_size,threshold_tau,tn,token_setting,total,tp
+general_ablation_pope,0.828,18.0,2,414,POPE,0.83203125,38,48,0.8,18,SparseVLM-Original,18,0.8160919540229885,0.848605577689243,True,POPE-STAGE8-SPARSE-ORIG-64,500,topk,20260610,500,,201,64,500,213

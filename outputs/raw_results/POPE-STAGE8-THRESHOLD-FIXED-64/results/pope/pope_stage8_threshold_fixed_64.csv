@@ -1,0 +1,2 @@
+ablation_role,accuracy,average_retained_tokens,candidate_pool_factor,correct,dataset,f1,fn,fp,lambda_relevance,max_retained_tokens,method,min_retained_tokens,precision,recall,record_selection_similarity,run_id,sample_count,selection_method,subset_seed,subset_size,threshold_tau,tn,token_setting,total,tp
+general_ablation_pope,0.846,18.0,2,423,POPE,0.8527724665391968,28,49,0.8,18,Threshold-Fixed-k,18,0.8198529411764706,0.8884462151394422,True,POPE-STAGE8-THRESHOLD-FIXED-64,500,threshold_fixed,20260610,500,0.85,200,64,500,223

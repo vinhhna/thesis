@@ -4,9 +4,9 @@ Stage 8 quantifies selected-token behavior because Stage 7 visualizations were m
 
 ## Data status
 
-- Detailed selected-token metric rows: 178200
-- Pairwise similarity available: no
-- Pending required GQA/POPE Stage 8 subset runs: 14
+- Detailed selected-token metric rows: 200400
+- Pairwise similarity available: yes
+- Pending required GQA/POPE Stage 8 subset runs: 0
 - Optional failure-mining ablation rows tracked: 4
 
 The full Stage 5 benchmark tables remain the official benchmark results. Stage 8 subset results are auxiliary mechanism and hyperparameter evidence, not replacement benchmark scores.
@@ -14,7 +14,28 @@ Spatial and overlap summaries may still include existing full-run metadata; the 
 
 ## Pairwise similarity
 
-Pairwise similarity is not available in the current saved predictions because they do not contain instrumented selected-token hidden-state similarity aggregates. Therefore Stage 8 does not yet make a redundancy-reduction claim from pairwise similarity.
+| dataset | token_setting | method | run_id | pairwise_available_count | mean_mean_pairwise_similarity | mean_p90_pairwise_similarity | mean_similarity_above_0.85_ratio |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| failure_mining | 128 | Ours | FM-OURS-128 | 0 |  |  |  |
+| failure_mining | 128 | SparseVLM-Original | FM-SPARSE-ORIG-128 | 0 |  |  |  |
+| failure_mining | 128 | Threshold-Fixed-k | FM-THRESHOLD-FIXED-128 | 0 |  |  |  |
+| failure_mining | 64 | Ours | FM-OURS-64 | 0 |  |  |  |
+| failure_mining | 64 | Ours | FM-STAGE8-OURS-64-P2-L05 | 100 | 0.211813 | 0.409538 | 0.012279 |
+| failure_mining | 64 | Ours | FM-STAGE8-OURS-64-P2-L07 | 100 | 0.210999 | 0.470685 | 0.040735 |
+| failure_mining | 64 | Ours | FM-STAGE8-OURS-64-P3-L05 | 100 | 0.198434 | 0.390037 | 0.010000 |
+| failure_mining | 64 | Ours | FM-STAGE8-OURS-64-P3-L07 | 100 | 0.200996 | 0.447978 | 0.037574 |
+| failure_mining | 64 | SparseVLM-Original | FM-SPARSE-ORIG-64 | 0 |  |  |  |
+| failure_mining | 64 | Threshold-Fixed-k | FM-THRESHOLD-FIXED-64 | 0 |  |  |  |
+| gqa | 128 | Ours | GQA-OURS-128 | 0 |  |  |  |
+| gqa | 128 | SparseVLM-Original | GQA-SPARSE-ORIG-128 | 0 |  |  |  |
+| gqa | 128 | Threshold-Fixed-k | GQA-THRESHOLD-FIXED-128 | 0 |  |  |  |
+| gqa | 64 | Ours | GQA-OURS-64 | 0 |  |  |  |
+| gqa | 64 | Ours | GQA-STAGE8-OURS-64-P2-L05 | 500 | 0.213907 | 0.409688 | 0.009779 |
+| gqa | 64 | Ours | GQA-STAGE8-OURS-64-P2-L07 | 500 | 0.213340 | 0.459075 | 0.032059 |
+| gqa | 64 | Ours | GQA-STAGE8-OURS-64-P2-L08 | 500 | 0.220174 | 0.522689 | 0.046897 |
+| gqa | 64 | Ours | GQA-STAGE8-OURS-64-P3-L05 | 500 | 0.196494 | 0.387213 | 0.008147 |
+
+Interpretation: lower similarity may support a redundancy-reduction claim only when it is paired with stable or improved answer-level behavior.
 
 ## Spatial coverage
 
@@ -26,20 +47,20 @@ The following final-layer spatial metrics are diagnostic only. Broader coverage 
 | failure_mining | 128 | SparseVLM-Original | FM-SPARSE-ORIG-128 | 33.780000 | 0.891979 | 0.058646 | 7.974661 | 3.980000 |
 | failure_mining | 128 | Threshold-Fixed-k | FM-THRESHOLD-FIXED-128 | 32.420000 | 0.854288 | 0.056285 | 7.641772 | 3.950000 |
 | failure_mining | 64 | Ours | FM-OURS-64 | 15.130000 | 0.783819 | 0.026268 | 8.096846 | 3.910000 |
+| failure_mining | 64 | Ours | FM-STAGE8-OURS-64-P2-L05 | 14.810000 | 0.774462 | 0.025712 | 7.966747 | 3.900000 |
+| failure_mining | 64 | Ours | FM-STAGE8-OURS-64-P2-L07 | 15.090000 | 0.770469 | 0.026198 | 8.037024 | 3.930000 |
+| failure_mining | 64 | Ours | FM-STAGE8-OURS-64-P3-L05 | 14.980000 | 0.784705 | 0.026007 | 7.953900 | 3.910000 |
+| failure_mining | 64 | Ours | FM-STAGE8-OURS-64-P3-L07 | 14.760000 | 0.778594 | 0.025625 | 8.019118 | 3.890000 |
 | failure_mining | 64 | SparseVLM-Original | FM-SPARSE-ORIG-64 | 15.680000 | 0.775573 | 0.027222 | 8.109884 | 3.890000 |
 | failure_mining | 64 | Threshold-Fixed-k | FM-THRESHOLD-FIXED-64 | 15.010000 | 0.637969 | 0.026059 | 7.166374 | 3.820000 |
 | gqa | 128 | Ours | GQA-OURS-128 | 32.929000 | 0.927675 | 0.057169 | 8.187976 | 3.993200 |
 | gqa | 128 | SparseVLM-Original | GQA-SPARSE-ORIG-128 | 33.701800 | 0.901398 | 0.058510 | 7.928293 | 3.989600 |
 | gqa | 128 | Threshold-Fixed-k | GQA-THRESHOLD-FIXED-128 | 32.511000 | 0.849687 | 0.056443 | 7.541123 | 3.981400 |
 | gqa | 64 | Ours | GQA-OURS-64 | 15.198800 | 0.785026 | 0.026387 | 8.015606 | 3.907000 |
-| gqa | 64 | SparseVLM-Original | GQA-SPARSE-ORIG-64 | 15.442200 | 0.778135 | 0.026810 | 8.093133 | 3.888200 |
-| gqa | 64 | Threshold-Fixed-k | GQA-THRESHOLD-FIXED-64 | 14.988800 | 0.640541 | 0.026022 | 7.002464 | 3.838000 |
-| pope | 128 | Ours | POPE-OURS-128 | 33.321333 | 0.947807 | 0.057850 | 8.423348 | 3.998000 |
-| pope | 128 | SparseVLM-Original | POPE-SPARSE-ORIG-128 | 33.875333 | 0.939264 | 0.058812 | 8.323659 | 3.996000 |
-| pope | 128 | Threshold-Fixed-k | POPE-THRESHOLD-FIXED-128 | 32.878000 | 0.881514 | 0.057080 | 7.821930 | 3.980000 |
-| pope | 64 | Ours | POPE-OURS-64 | 15.116667 | 0.794150 | 0.026244 | 8.093704 | 3.842667 |
-| pope | 64 | SparseVLM-Original | POPE-SPARSE-ORIG-64 | 15.438000 | 0.805836 | 0.026802 | 8.310373 | 3.830000 |
-| pope | 64 | Threshold-Fixed-k | POPE-THRESHOLD-FIXED-64 | 14.967333 | 0.650552 | 0.025985 | 7.200703 | 3.754667 |
+| gqa | 64 | Ours | GQA-STAGE8-OURS-64-P2-L05 | 14.858000 | 0.781187 | 0.025795 | 7.894294 | 3.904000 |
+| gqa | 64 | Ours | GQA-STAGE8-OURS-64-P2-L07 | 15.018000 | 0.783403 | 0.026073 | 7.916976 | 3.882000 |
+| gqa | 64 | Ours | GQA-STAGE8-OURS-64-P2-L08 | 15.182000 | 0.767903 | 0.026358 | 7.905069 | 3.894000 |
+| gqa | 64 | Ours | GQA-STAGE8-OURS-64-P3-L05 | 15.032000 | 0.794465 | 0.026097 | 8.033977 | 3.904000 |
 
 ## Ours / Threshold overlap
 
@@ -93,20 +114,20 @@ General ablation conclusions should be drawn from the GQA/POPE 500-sample subset
 
 | dataset | run_id | run_available | ablation_role | row_role | candidate_pool_factor | lambda_relevance | subset_seed | subset_size | accuracy | f1 | mean_pairwise_similarity | notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| gqa | GQA-STAGE8-SPARSE-ORIG-64 | false | general_ablation_gqa | required_general_comparison | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| gqa | GQA-STAGE8-OURS-64-P2-L08 | false | general_ablation_gqa | required_general_baseline | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| gqa | GQA-STAGE8-THRESHOLD-FIXED-64 | false | general_ablation_gqa | required_general_comparison | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| gqa | GQA-STAGE8-OURS-64-P2-L05 | false | general_ablation_gqa | required_general_ablation | 2 | 0.5 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| gqa | GQA-STAGE8-OURS-64-P2-L07 | false | general_ablation_gqa | required_general_ablation | 2 | 0.7 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| gqa | GQA-STAGE8-OURS-64-P3-L05 | false | general_ablation_gqa | required_general_ablation | 3 | 0.5 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| gqa | GQA-STAGE8-OURS-64-P3-L07 | false | general_ablation_gqa | required_general_ablation | 3 | 0.7 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| pope | POPE-STAGE8-SPARSE-ORIG-64 | false | general_ablation_pope | required_general_comparison | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| pope | POPE-STAGE8-OURS-64-P2-L08 | false | general_ablation_pope | required_general_baseline | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| pope | POPE-STAGE8-THRESHOLD-FIXED-64 | false | general_ablation_pope | required_general_comparison | 2 | 0.8 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| pope | POPE-STAGE8-OURS-64-P2-L05 | false | general_ablation_pope | required_general_ablation | 2 | 0.5 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| pope | POPE-STAGE8-OURS-64-P2-L07 | false | general_ablation_pope | required_general_ablation | 2 | 0.7 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| pope | POPE-STAGE8-OURS-64-P3-L05 | false | general_ablation_pope | required_general_ablation | 3 | 0.5 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
-| pope | POPE-STAGE8-OURS-64-P3-L07 | false | general_ablation_pope | required_general_ablation | 3 | 0.7 | 20260610 | 500 |  |  |  | required Stage 8 GQA/POPE subset run pending |
+| gqa | GQA-STAGE8-SPARSE-ORIG-64 | true | general_ablation_gqa | required_general_comparison | 2 | 0.8 | 20260610 | 500 | 0.616000 |  | 0.244429 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| gqa | GQA-STAGE8-OURS-64-P2-L08 | true | general_ablation_gqa | required_general_baseline | 2 | 0.8 | 20260610 | 500 | 0.626000 |  | 0.220174 | official Ours-64 baseline setting on the Stage 8 500-sample subset |
+| gqa | GQA-STAGE8-THRESHOLD-FIXED-64 | true | general_ablation_gqa | required_general_comparison | 2 | 0.8 | 20260610 | 500 | 0.642000 |  | 0.290032 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| gqa | GQA-STAGE8-OURS-64-P2-L05 | true | general_ablation_gqa | required_general_ablation | 2 | 0.5 | 20260610 | 500 | 0.618000 |  | 0.213907 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| gqa | GQA-STAGE8-OURS-64-P2-L07 | true | general_ablation_gqa | required_general_ablation | 2 | 0.7 | 20260610 | 500 | 0.636000 |  | 0.213340 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| gqa | GQA-STAGE8-OURS-64-P3-L05 | true | general_ablation_gqa | required_general_ablation | 3 | 0.5 | 20260610 | 500 | 0.628000 |  | 0.196494 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| gqa | GQA-STAGE8-OURS-64-P3-L07 | true | general_ablation_gqa | required_general_ablation | 3 | 0.7 | 20260610 | 500 | 0.628000 |  | 0.200417 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| pope | POPE-STAGE8-SPARSE-ORIG-64 | true | general_ablation_pope | required_general_comparison | 2 | 0.8 | 20260610 | 500 | 0.828000 | 0.832031 | 0.243585 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| pope | POPE-STAGE8-OURS-64-P2-L08 | true | general_ablation_pope | required_general_baseline | 2 | 0.8 | 20260610 | 500 | 0.840000 | 0.846154 | 0.220071 | official Ours-64 baseline setting on the Stage 8 500-sample subset |
+| pope | POPE-STAGE8-THRESHOLD-FIXED-64 | true | general_ablation_pope | required_general_comparison | 2 | 0.8 | 20260610 | 500 | 0.846000 | 0.852772 | 0.283629 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| pope | POPE-STAGE8-OURS-64-P2-L05 | true | general_ablation_pope | required_general_ablation | 2 | 0.5 | 20260610 | 500 | 0.842000 | 0.850095 | 0.212966 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| pope | POPE-STAGE8-OURS-64-P2-L07 | true | general_ablation_pope | required_general_ablation | 2 | 0.7 | 20260610 | 500 | 0.842000 | 0.848369 | 0.212920 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| pope | POPE-STAGE8-OURS-64-P3-L05 | true | general_ablation_pope | required_general_ablation | 3 | 0.5 | 20260610 | 500 | 0.838000 | 0.849162 | 0.197467 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
+| pope | POPE-STAGE8-OURS-64-P3-L07 | true | general_ablation_pope | required_general_ablation | 3 | 0.7 | 20260610 | 500 | 0.822000 | 0.831758 | 0.204471 | Stage 8 GQA/POPE 500-sample subset row; auxiliary, not an official Stage 5 benchmark score |
 
 ### Optional failure-mining stress-test rows
 
@@ -114,10 +135,10 @@ These rows are secondary targeted recovery checks and should not be used as repr
 
 | dataset | run_id | run_available | candidate_pool_factor | lambda_relevance | accuracy | recovered_baseline_failures | net_gain | notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| failure_mining | FM-STAGE8-OURS-64-P2-L05 | false | 2 | 0.5 |  |  |  | optional failure-mining stress-test run pending |
-| failure_mining | FM-STAGE8-OURS-64-P2-L07 | false | 2 | 0.7 |  |  |  | optional failure-mining stress-test run pending |
-| failure_mining | FM-STAGE8-OURS-64-P3-L05 | false | 3 | 0.5 |  |  |  | optional failure-mining stress-test run pending |
-| failure_mining | FM-STAGE8-OURS-64-P3-L07 | false | 3 | 0.7 |  |  |  | optional failure-mining stress-test run pending |
+| failure_mining | FM-STAGE8-OURS-64-P2-L05 | true | 2 | 0.5 | 0.740000 | 9 | 4 | optional failure-mining targeted recovery/stress-test row; not representative |
+| failure_mining | FM-STAGE8-OURS-64-P2-L07 | true | 2 | 0.7 | 0.720000 | 9 | 2 | optional failure-mining targeted recovery/stress-test row; not representative |
+| failure_mining | FM-STAGE8-OURS-64-P3-L05 | true | 3 | 0.5 | 0.720000 | 7 | 2 | optional failure-mining targeted recovery/stress-test row; not representative |
+| failure_mining | FM-STAGE8-OURS-64-P3-L07 | true | 3 | 0.7 | 0.730000 | 7 | 3 | optional failure-mining targeted recovery/stress-test row; not representative |
 
 ## Threshold-Adaptive interpretation
 
@@ -125,5 +146,5 @@ Threshold-Adaptive is treated as a variable-token trade-off baseline. It should 
 
 ## Current thesis-safe conclusion
 
-At the current checkpoint, Stage 8 supports spatial/overlap/failure-recovery analysis from saved metadata, but it does not yet support a strong redundancy-reduction claim because true pairwise hidden-state similarity requires instrumented Kaggle reruns.
-The Ours hyperparameter conclusion is pending until the required GQA/POPE 500-sample 64-token candidate-pool/lambda ablation runs are imported.
+Stage 8 can compare answer-level behavior on the GQA/POPE 500-sample subsets with selected-token similarity, spatial coverage, and baseline overlap. Any redundancy-reduction claim should be conditioned on the actual pairwise similarity direction and whether it aligns with subset accuracy or targeted failure recovery.
+Once all required GQA/POPE rows are available, the Stage 8 conclusion should separate general hyperparameter behavior from any optional failure-mining recovery behavior.

@@ -1,0 +1,45 @@
+[
+  {
+    "run_id": "GQA-STAGE8-OURS-64-P2-L08",
+    "dataset": "gqa",
+    "ablation_role": "general_ablation_gqa",
+    "method": "Ours",
+    "selection_method": "mmr",
+    "retained_tokens": 64,
+    "threshold_tau": 0.85,
+    "candidate_pool_factor": 2,
+    "lambda_relevance": 0.8,
+    "record_selection_similarity": true,
+    "sample_count": 500,
+    "subset_seed": 20260610,
+    "subset_size": 500,
+    "subset_file": "/kaggle/working/stage8_subset_runs/GQA-STAGE8-OURS-64-P2-L08/stage8_gqa_subset_seed20260610_n500.jsonl",
+    "prediction_file": "/kaggle/working/stage8_subset_runs/GQA-STAGE8-OURS-64-P2-L08/results/gqa/predictions/gqa_stage8_ours_64_p2_l08.jsonl",
+    "metric_file": "/kaggle/working/stage8_subset_runs/GQA-STAGE8-OURS-64-P2-L08/results/gqa/gqa_stage8_ours_64_p2_l08.csv",
+    "log_file": "/kaggle/working/stage8_subset_runs/GQA-STAGE8-OURS-64-P2-L08/logs/GQA-STAGE8-OURS-64-P2-L08.jsonl",
+    "metrics": [
+      {
+        "run_id": "GQA-STAGE8-OURS-64-P2-L08",
+        "dataset": "GQA",
+        "ablation_role": "general_ablation_gqa",
+        "method": "Ours",
+        "selection_method": "mmr",
+        "token_setting": 64,
+        "threshold_tau": "",
+        "candidate_pool_factor": 2,
+        "lambda_relevance": 0.8,
+        "record_selection_similarity": true,
+        "sample_count": 500,
+        "subset_seed": 20260610,
+        "subset_size": 500,
+        "accuracy": 0.626,
+        "correct": 313,
+        "total": 500,
+        "average_retained_tokens": 18.0,
+        "min_retained_tokens": 18,
+        "max_retained_tokens": 18
+      }
+    ],
+    "status": "ok"
+  }
+]
