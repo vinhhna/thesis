@@ -584,3 +584,113 @@ TODO: DEBUG WRONG CASES, có thể thử một giải pháp MMR khác khi 2 vị
         . stage 7 does not deny that improvement, but only indicates that the recovery mechanism is more complex than simple selected-patch coverage.
     + the sparsevlm paper uses visualization primarily to illustrate the pruning process and prompt-guided focus, not to prove the causal mechanism for each failure recovery. 
         . in this project, i use visualization to test a stronger claim: whether the recovery can be explained by the retained evidence regions. therefore, the evaluation criteria are stricter, and many cases become inconclusive.
+
+- Stage 8: Ablation Study
+    + main conclusion:
+        . stage 8 answers the question: does our method really modify the selected-token behaviour, and is that change really associated to model performance?
+        . there are evidences showing that ours can reduce redundancy compared to sparsevlm, as pairwise similarity is lower.
+            . however, reducing redundancy does not directly lead to best accuracy.
+        . threshold-fixed is still a very strong baseline and has higher accuracy/recovery than ours, despite having different selected-token behaviour.
+    + experiment design:
+        . use: 500-sample subsets for gqa and pope
+            . failure-mining is not used for hyperparameter tuning, as it is skewed towards problems of sparsevlm. it is only used for checking targeted recovery.
+    + ablation results:
+        . for gqa:
+            . ours is better than sparsevlm in almost all settings
+            . best setting for ours:
+                . candidate pool = 2k
+                . lambda = 0.7
+                . accuracy = 0.636
+            . still, threshold-fixed yields highest results with accuracy = 0.642
+        . for pope:
+            . ours is also improved compared to sparsevlm
+            . best setting for ours:
+                . candidate pool = 2k
+                . lambda = 0.5 or 0.7
+            . there exist a bad setting giving lower accuracy than sparsevlm
+            . still threshold-fixed yields highest results as the best method about accuracy-f1.
+        . which hyperparameter to choose:
+            . candidate pool:
+                . 3k gives a lower mean pairwise similarity, so it may seem that it reduces redundancy better.
+                . however 3k does not reliably improve accuracy, especially with 3k and 0.7.
+                . so in total, pool 3k gives less similar tokens, but reducing redundancy does not necessary mean higher acucracy.
+            . lambda:
+                . on gqa, lambda = 0.7 is currently the best, 0.5 is more inclined to diversity so accuracy is lower, 0.8 is not optimized although it is the original baseline setting.
+                . on pope, lambda = 0.5 or 0.7 are all good, 0.8 is still okay but not the best.
+                . therefore candidate_pool_factor=2 and lambda=0.7 is the most balanced combination if we want a setting that can be used anywhere.
+                . the official stage 5 results use the original ours setting, while stage 8 ablation suggests that λ=0.7 may provide a better relevance-diversity balance on the 500-sample gqa subset.
+        . pairwise similarity:
+            . compared to sparsevlm: yes
+                . on gqa: sparsevlm 0.244, ours best accuracy p2 0.7: 0.213, lowest similarity p3 0.5: 0.196
+                . on pope: sparsevlm 0.244, ours best accuracy p2 0.5/0.7: 0.213, ours p3 0.5: 0.197
+                . ours consistently lowers mean pairwise similarity compared with sparsevlm in the instrumented Stage 8 subset runs.
+                    . this directly supports the redundancy reduction claim compared to sparsevlm.
+                    . however, remember that lower redundancy does not correlate with higher performance.
+            . compared to threshold-fixed: complex
+                . threshold-fixed has higher mean pairwise similarity, with 0.29 on gqa and 0.284 on pope.
+                . however, it has similarity_above_0.85_ratio = 0
+                . so the results are opposite:
+                    . ours has lower mean similarity
+                    . threshold has no extremely similar pairs
+                    . threshold has better accuracy.
+                . ours reduces average selected-token similarity compared with sparsevlm-original. compared with threshold-fixed, the redundancy picture is mixed: threshold eliminates high-similarity pairs by construction, while ours often has lower average similarity.
+        . spatial coverage:
+            . ours can keep higher bbox area ratio and centroid distance than threshold-fixed.
+            . however, threshold-fixed chooses tokens that are more concentrated in latent space, while having higher accuracy.
+            . ours tends to maintain broader spatial coverage than threshold-fixed, but broader coverage is not automatically better. for some tasks, choosing to focus on important evidence regions can be more effective.
+                . this result fits stage 7 claim: by visualization, covering more information is not enough to explain the recovery rate.
+        . are ours and threshold choosing the same set of tokens?
+            . ours vs sparsevlm: jaccard=0.458/0.458/0.437/0.443
+                . ours still keep a high overlap rate with sparsevlm
+            . ours vs threshold-fixed: jaccard=0.333/0.339/0.332/0.337
+                . ours and threshold don't choose the same token set, they are moderately different.
+            . threshold-fixed vs sparsevlm: jaccard=0.273/0.268
+                . threshold-fixed differs than sparsevlm more than ours does to sparsevlm.
+            . ours is a modification relatively closer to sparsevlm-original than threshold-fixed. 
+                . threshold-fixed changes the selected-token set more significantly, and this may explain why threshold-fixed sometimes achieves better performance.
+            . jaccard and overlap are calculated from the unique original patch ids, not raw-selected index lists, so this result is reliable to compare token sets.
+        . failure mining:
+            . in failure-mining, ours is clearly better than threshold-fixed. 
+                . stage 8 also retains the results of stage 6: out of 30 errors from sparsevlm-original-64, there are 7 cases where both ours and threshold recover, 3 cases where only ours recovers, 0 cases where only threshold recovers, and 20 cases where neither has fixed the issue yet.
+            . the strongest evidence for ours remains the targeted failure-mining setting, where ours recovers more sparsevlm-original failures and introduces fewer regressions than threshold-fixed.
+            . on other datasets:
+                . on gqa threshold-fixed is better than ours in recovery and net gain.
+                . same for pope
+                . for 128-token setting, sparsevlm can keep more information so it is good enough, and there are not too much room for improvements.
+    + threshold-adaptive:
+        . it is a variable-token trade-off baseline, not a fixed-budget competitor.
+        . we should not conclude that it should beat/lose to ours (aka not directly comparable)
+        . the results from failure recovery shows that threshold-adaptive is good:
+            . gqa: net +111, 153, 172 (for tau 0.8, 0.85, 0.9)
+            . pope: net +21, +36, +38
+        . threshold-adaptive shows a favorable accuracy-token trade-off, but it is not directly comparable to ours-64 as a fixed-budget method.
+- Impact on our research results:
+    + which hyperparameter set is the best?
+        . candidate_pool_factor = 2 and λ = 0.7 is the most balanced setting.
+        . p3 reduces similarity better but is not stable regarding accuracy.
+        . λ=0.8 is not optimal in the ablation subset.
+    + does ours method can really reduce redundancy?
+        . yes, when compared to sparsevlm-original, ours reduces mean pairwise similarity quite consistently.
+        . we cannot say that ours reduces redundancy better than threshold-fixed across all metrics, because threshold-fixed eliminates high-similarity pairs based on a threshold and achieves a similarity_above_0.85_ratio = 0.
+    + does reducing redundancy always make the results improve?
+        . no
+        . for example, p3 0.5 has the lowest similarity but does not achieve the highest accuracy.
+        . threshold-fixed has higher mean similarity than ours but having higher accuracy.
+        . spatial coverage does not imply higher accuracy.
+- Change of thesis claim:
+    + still supported:
+        . Ours improves over SparseVLM-Original under aggressive 64-token pruning and reduces average selected-token similarity, suggesting that redundancy-aware token selection can improve retained-token quality.
+    + we do not say:
+        . ours is the best method
+        . ours proves that redundancy reduction causes the improvements.
+        . broader spatial coverage explains the improvement.
+    + final claim:
+        . Stage 8 provides quantitative support that Ours reduces average selected-token similarity compared with SparseVLM-Original and improves answer-level behavior under the 64-token setting. 
+            . However, the relationship between redundancy reduction and task performance is not monotonic. 
+            . Threshold-Fixed remains a strong baseline, often achieving higher accuracy and recovery on GQA/POPE, while Ours shows its clearest advantage on the targeted failure-mining set.
+    + stage 8 conclusions:
+        . ours is better than sparsevlm on gqa/pope dataset and reduces pairwise similarity.
+        . ours is not consistently better than threshold-fixed, as the latter is better on accuracy, f1, recovery and net gain.
+        . redundancy reduction applies, but it is not the sole factor affecting performance.
+        . a higher candidate pool can reduce similarity, but it does not guarantee better accuracy.
+        . failure-mining is where ours perform the best, as it recovers more errors than threshold-fixed and has better net gain in targeted settings.
