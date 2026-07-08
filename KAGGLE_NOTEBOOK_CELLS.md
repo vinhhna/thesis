@@ -1,69 +1,30 @@
-# SparseVLM Kaggle Stage 8 Subset Runner - One Run
+# SparseVLM Kaggle Defense Demo - Single Image
 
-These cells run one Stage 8 ablation/comparison experiment on a deterministic 500-sample subset.
+These cells are for the live defense demo. This demo is POPE-only: every demo
+image should come from the POPE/COCO validation image set, not GQA or the
+failure-mining sample-image folder. The intended workflow is:
 
-Current configured run:
+1. Run Demo Cells 1 and 2 after a fresh Kaggle clone/runtime setup.
+2. Restart the Kaggle kernel after Demo Cell 2.
+3. Run Demo Cells 3 and 5 once to initialize helpers and load the model.
+4. For each new demo image, edit only Demo Cell 4, then rerun Demo Cells 6 and 7.
 
-```text
-POPE-STAGE8-SPARSE-ORIG-64
-```
+The live demo runs one POPE image at a time through:
 
-Change only `RUN_ID_TO_RUN` in Cell 4 for the next Kaggle session. Each run writes to a unique output folder and creates one zip file under `/kaggle/working`.
+- `SparseVLM-Original-64`: original top-k selection.
+- `Ours-64`: MMR selection.
+- `Threshold-Fixed-64`: fixed-budget threshold baseline.
 
-This notebook is currently configured for the POPE Stage 8 subset runs. Use the POPE run list below as the working order, then change `RUN_ID_TO_RUN` to the next POPE run after each Kaggle download.
+Dense-576 reference answers are included in the presets when available, but the live dense model is not loaded by default because it requires a separate non-sparse model load and extra GPU memory.
 
-Important: Cell 1 clones from GitHub. Before running this on Kaggle, push the Stage 8 code changes that add `lambda_relevance` and `record_selection_similarity`.
-
-Stage 8 uses fixed subset seed:
-
-```text
-20260610
-```
-
-Required GQA runs:
-
-```text
-GQA-STAGE8-SPARSE-ORIG-64
-GQA-STAGE8-OURS-64-P2-L08
-GQA-STAGE8-THRESHOLD-FIXED-64
-GQA-STAGE8-OURS-64-P2-L05
-GQA-STAGE8-OURS-64-P2-L07
-GQA-STAGE8-OURS-64-P3-L05
-GQA-STAGE8-OURS-64-P3-L07
-```
-
-Required POPE runs:
-
-```text
-POPE-STAGE8-SPARSE-ORIG-64
-POPE-STAGE8-OURS-64-P2-L08
-POPE-STAGE8-THRESHOLD-FIXED-64
-POPE-STAGE8-OURS-64-P2-L05
-POPE-STAGE8-OURS-64-P2-L07
-POPE-STAGE8-OURS-64-P3-L05
-POPE-STAGE8-OURS-64-P3-L07
-```
-
-Optional failure-mining stress-test runs:
-
-```text
-FM-STAGE8-OURS-64-P2-L05
-FM-STAGE8-OURS-64-P2-L07
-FM-STAGE8-OURS-64-P3-L05
-FM-STAGE8-OURS-64-P3-L07
-```
-
-These optional runs are not representative ablation evidence; use them only for targeted recovery behavior.
-
-Run Cell 2 only after a fresh clone or package reset, then restart the Kaggle kernel before continuing.
-
-Cell 1: Clone repo
+Demo Cell 1: Clone repo
 ```python
 %env USE_FLAX=NO
 %env USE_JAX=NO
 %env USE_TF=NO
 %env WANDB_DISABLED=true
 %env WANDB_MODE=disabled
+%env TOKENIZERS_PARALLELISM=false
 
 %cd /kaggle/working
 !rm -rf thesis
@@ -73,7 +34,7 @@ Cell 1: Clone repo
 !git rev-parse --short HEAD
 ```
 
-Cell 2: Install runtime packages
+Demo Cell 2: Install runtime packages
 ```python
 import subprocess
 import sys
@@ -106,7 +67,6 @@ pip(
     "tf-keras",
     "tensorboard",
     "tensorboard-data-server",
-    "pandas",
     "wandb",
     "bitsandbytes",
     "jax",
@@ -117,111 +77,59 @@ pip(
     "orbax-checkpoint",
 )
 
-pip("install", "--force-reinstall", "numpy==1.26.4", "protobuf", "sentencepiece", "shortuuid", "ijson")
+pip("install", "--force-reinstall", "numpy==1.26.4", "protobuf", "sentencepiece", "shortuuid")
 pip("install", "transformers==4.37.2", "tokenizers==0.15.1", "accelerate==0.21.0", "peft==0.7.1")
 pip("install", "einops==0.6.1", "einops-exts==0.0.4", "timm==0.6.13", "markdown2[all]")
 
-print("Restart the Kaggle kernel after this cell finishes, then continue from Cell 3.")
+print("Restart the Kaggle kernel after this cell finishes, then continue from Demo Cell 3.")
 ```
 
-Cell 3: Runtime paths and environment
+Demo Cell 3: Demo helpers
 ```python
 %cd /kaggle/working/thesis/SparseVLMs
 
+import csv
+import json
 import os
+import re
+import shutil
 import sys
+import textwrap
+import time
 import zipfile
+from copy import deepcopy
 from pathlib import Path
 
+import numpy as np
 import torch
-
-
-def find_kaggle_input_dir(required_child):
-    input_root = Path("/kaggle/input")
-    working_extract_root = Path("/kaggle/working/input_unzipped")
-
-    matches = sorted(path for path in input_root.rglob(required_child) if path.is_dir())
-    if matches:
-        return matches[0]
-
-    zip_matches = sorted(path for path in input_root.rglob(f"{required_child}.zip") if path.is_file())
-    if zip_matches:
-        zip_path = zip_matches[0]
-        target_root = working_extract_root / zip_path.stem
-        marker = target_root / f".{required_child.lower()}_unzip_complete"
-        if not marker.exists():
-            target_root.mkdir(parents=True, exist_ok=True)
-            print("Unzipping Kaggle input archive:", zip_path)
-            print("Unzip target:", target_root)
-            with zipfile.ZipFile(zip_path) as archive:
-                archive.extractall(target_root)
-            marker.write_text(str(zip_path), encoding="utf-8")
-
-        extracted_matches = sorted(
-            path for path in target_root.rglob(required_child)
-            if path.is_dir()
-        )
-        if extracted_matches:
-            return extracted_matches[0]
-
-    available = [str(path) for path in input_root.rglob("*") if path.is_dir() or path.suffix == ".zip"]
-    raise FileNotFoundError(
-        f"Could not find an extracted {required_child!r} folder or {required_child}.zip. "
-        f"Available input paths: {available[:80]}"
-    )
+from IPython.display import Markdown, display
+from PIL import Image, ImageDraw, ImageFont
 
 
 REPO_ROOT = Path("/kaggle/working/thesis")
 LLAVA_ROOT = REPO_ROOT / "SparseVLMs"
-OUTPUT_BASE_ROOT = Path("/kaggle/working/stage8_subset_runs")
+DEMO_OUTPUT_ROOT = Path("/kaggle/working/defense_demo_outputs")
 
 os.environ["USE_FLAX"] = "NO"
 os.environ["USE_JAX"] = "NO"
 os.environ["USE_TF"] = "NO"
 os.environ["WANDB_DISABLED"] = "true"
 os.environ["WANDB_MODE"] = "disabled"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["PYTHONPATH"] = str(LLAVA_ROOT)
 if str(LLAVA_ROOT) not in sys.path:
     sys.path.insert(0, str(LLAVA_ROOT))
 
-print("Torch:", torch.__version__)
-print("Torch CUDA build:", torch.version.cuda)
-print("CUDA available:", torch.cuda.is_available())
-print("Repository root:", REPO_ROOT)
-print("Output base root:", OUTPUT_BASE_ROOT)
-```
-
-Cell 4: Stage 8 subset helpers
-```python
-import csv
-import json
-import random
-import re
-import sys
-import time
-import urllib.request
-import zipfile
-from collections import Counter
-from copy import deepcopy
-from dataclasses import dataclass
-from pathlib import Path
-
-import ijson
-import shortuuid
-import torch
-from PIL import Image
-
 
 def patch_sparse_private_import():
-    path = Path(LLAVA_ROOT) / "llava/model/language_model/modelling_sparse_llama.py"
+    path = LLAVA_ROOT / "llava/model/language_model/modelling_sparse_llama.py"
     text = path.read_text(encoding="utf-8")
     anchor = "from .score import *"
     replacement = "from .score import *\nfrom .score import _to_int"
     if replacement not in text:
         if anchor not in text:
             raise RuntimeError(f"Patch anchor not found in {path}")
-        text = text.replace(anchor, replacement, 1)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text.replace(anchor, replacement, 1), encoding="utf-8")
         print("Patched SparseVLM private score import:", path)
     else:
         print("SparseVLM private score import already patched.")
@@ -237,151 +145,47 @@ patch_sparse_private_import()
 
 from llava.constants import DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX
 from llava.conversation import conv_templates
-from llava.mm_utils import get_model_name_from_path, process_images, tokenizer_image_token
+from llava.mm_utils import process_images, tokenizer_image_token
 from llava.model.builder import load_pretrained_model
+from llava.mm_utils import get_model_name_from_path
 from llava.utils import disable_torch_init
 
 
-# ----- Config -----
-
 MODEL_PATH = "liuhaotian/llava-v1.5-7b"
 CONV_MODE = "llava_v1"
-MAX_NEW_TOKENS = 32
-TEMPERATURE = 0.0
-NUM_BEAMS = 1
-DEFAULT_THRESHOLD_TAU = 0.85
-DEFAULT_LAMBDA_RELEVANCE = 0.8
-RECORD_SELECTION_SIMILARITY = True
 SPARSE_PRUNING_LOC = [2, 6, 15]
+GRID_SIZE = 24
+MAX_PATCH_INDEX = GRID_SIZE * GRID_SIZE - 1
 
-STAGE8_SUBSET_SEED = 20260610
-GQA_STAGE8_SUBSET_N = 500
-POPE_STAGE8_SUBSET_N = 500
-GQA_SHORT_ANSWER_SUFFIX = "\nAnswer the question using a single word or phrase."
-FAILURE_MINING_CSV = REPO_ROOT / "failure_mining_set.csv"
-FAILURE_MINING_IMAGE_ROOT = REPO_ROOT
-FAILURE_MINING_SHORT_ANSWER_SUFFIX = "\nAnswer using a single word or short phrase."
-GQA_QUESTIONS_URLS = [
-    "https://downloads.cs.stanford.edu/nlp/data/gqa/questions1.2.zip",
-    "https://nlp.stanford.edu/data/gqa/questions1.2.zip",
-]
-GQA_QUESTION_FILE_PREFERENCE = [
-    "val_balanced_questions.json",
-    "val_all_questions.json",
-]
-CHECKPOINT_EVERY = 25
-
-REPO_ROOT = Path(REPO_ROOT)
-LLAVA_ROOT = Path(LLAVA_ROOT)
-OUTPUT_BASE_ROOT = Path(OUTPUT_BASE_ROOT)
-
-
-# ----- Run catalog -----
-
-@dataclass(frozen=True)
-class Stage8Run:
-    run_id: str
-    dataset: str
-    ablation_role: str
-    method_label: str
-    selection_method: str
-    retained_tokens: int = 64
-    candidate_pool_factor: int = 2
-    lambda_relevance: float = DEFAULT_LAMBDA_RELEVANCE
-    threshold_tau: float = DEFAULT_THRESHOLD_TAU
-    record_selection_similarity: bool = RECORD_SELECTION_SIMILARITY
-
-    @property
-    def safe_name(self):
-        return self.run_id.lower().replace("-", "_")
-
-    @property
-    def prediction_relpath(self):
-        return f"{self.dataset}/predictions/{self.safe_name}.jsonl"
-
-    @property
-    def metric_relpath(self):
-        return f"{self.dataset}/{self.safe_name}.csv"
-
-
-STAGE8_RUNS = [
-    Stage8Run("GQA-STAGE8-SPARSE-ORIG-64", "gqa", "general_ablation_gqa", "SparseVLM-Original", "topk"),
-    Stage8Run("GQA-STAGE8-OURS-64-P2-L08", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.8),
-    Stage8Run("GQA-STAGE8-THRESHOLD-FIXED-64", "gqa", "general_ablation_gqa", "Threshold-Fixed-k", "threshold_fixed"),
-    Stage8Run("GQA-STAGE8-OURS-64-P2-L05", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.5),
-    Stage8Run("GQA-STAGE8-OURS-64-P2-L07", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.7),
-    Stage8Run("GQA-STAGE8-OURS-64-P3-L05", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.5),
-    Stage8Run("GQA-STAGE8-OURS-64-P3-L07", "gqa", "general_ablation_gqa", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.7),
-    Stage8Run("POPE-STAGE8-SPARSE-ORIG-64", "pope", "general_ablation_pope", "SparseVLM-Original", "topk"),
-    Stage8Run("POPE-STAGE8-OURS-64-P2-L08", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.8),
-    Stage8Run("POPE-STAGE8-THRESHOLD-FIXED-64", "pope", "general_ablation_pope", "Threshold-Fixed-k", "threshold_fixed"),
-    Stage8Run("POPE-STAGE8-OURS-64-P2-L05", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.5),
-    Stage8Run("POPE-STAGE8-OURS-64-P2-L07", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.7),
-    Stage8Run("POPE-STAGE8-OURS-64-P3-L05", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.5),
-    Stage8Run("POPE-STAGE8-OURS-64-P3-L07", "pope", "general_ablation_pope", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.7),
-    Stage8Run("FM-STAGE8-OURS-64-P2-L05", "failure_mining", "targeted_failure_recovery", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.5),
-    Stage8Run("FM-STAGE8-OURS-64-P2-L07", "failure_mining", "targeted_failure_recovery", "Ours", "mmr", candidate_pool_factor=2, lambda_relevance=0.7),
-    Stage8Run("FM-STAGE8-OURS-64-P3-L05", "failure_mining", "targeted_failure_recovery", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.5),
-    Stage8Run("FM-STAGE8-OURS-64-P3-L07", "failure_mining", "targeted_failure_recovery", "Ours", "mmr", candidate_pool_factor=3, lambda_relevance=0.7),
-]
-
-# Change this value for each Kaggle session. Keep exactly one run ID here.
-RUN_ID_TO_RUN = "POPE-STAGE8-SPARSE-ORIG-64"
-
-RUN_BY_ID = {run.run_id: run for run in STAGE8_RUNS}
-if RUN_ID_TO_RUN not in RUN_BY_ID:
-    raise ValueError(f"Unknown RUN_ID_TO_RUN: {RUN_ID_TO_RUN}")
-
-CURRENT_RUN = RUN_BY_ID[RUN_ID_TO_RUN]
-
-
-def expected_sample_count(dataset):
-    if dataset == "gqa":
-        return GQA_STAGE8_SUBSET_N
-    if dataset == "pope":
-        return POPE_STAGE8_SUBSET_N
-    if dataset == "failure_mining":
-        return 100
-    raise ValueError(f"Unsupported Stage 8 dataset: {dataset}")
-
-
-OUTPUT_ROOT = OUTPUT_BASE_ROOT / CURRENT_RUN.run_id
-DOWNLOAD_ZIP = Path(f"/kaggle/working/{CURRENT_RUN.run_id}_download.zip")
-RESULTS_ROOT = OUTPUT_ROOT / "results"
-LOG_DIR = OUTPUT_ROOT / "logs"
-SUMMARY_DIR = RESULTS_ROOT / "summary"
-MANIFEST_PATH = OUTPUT_ROOT / "stage8_subset_manifest.json"
-SUBSET_PATH = OUTPUT_ROOT / f"stage8_{CURRENT_RUN.dataset}_subset_seed{STAGE8_SUBSET_SEED}_n{expected_sample_count(CURRENT_RUN.dataset)}.jsonl"
-
-for path in [RESULTS_ROOT, LOG_DIR, SUMMARY_DIR]:
-    path.mkdir(parents=True, exist_ok=True)
-
-
-# ----- Common IO and metrics -----
-
-def write_jsonl(path, records):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        for record in records:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def read_jsonl(path):
-    rows = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
-
-
-def write_csv(path, rows, fieldnames):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+METHOD_SPECS = {
+    "sparse": {
+        "label": "SparseVLM-Original-64",
+        "selection_method": "topk",
+        "retained_tokens": 64,
+        "candidate_pool_factor": 2,
+        "lambda_relevance": 0.8,
+        "threshold_tau": 0.85,
+        "color": (220, 40, 40),
+    },
+    "ours": {
+        "label": "Ours-64",
+        "selection_method": "mmr",
+        "retained_tokens": 64,
+        "candidate_pool_factor": 2,
+        "lambda_relevance": 0.8,
+        "threshold_tau": 0.85,
+        "color": (30, 145, 70),
+    },
+    "threshold": {
+        "label": "Threshold-Fixed-64",
+        "selection_method": "threshold_fixed",
+        "retained_tokens": 64,
+        "candidate_pool_factor": 2,
+        "lambda_relevance": 0.8,
+        "threshold_tau": 0.85,
+        "color": (40, 95, 220),
+    },
+}
 
 
 def normalize_answer(text):
@@ -391,355 +195,139 @@ def normalize_answer(text):
     return text
 
 
-def normalize_gqa_answer(text):
-    text = str(text or "").strip().lower().rstrip(".")
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
-def pope_label_from_answer(text):
+def yes_no_label(text):
     words = normalize_answer(text).split()
     return "no" if "no" in words or "not" in words else "yes"
 
 
-def exact_or_phrase_match(prediction, target):
+def rough_correct(prediction, ground_truth):
+    gold = normalize_answer(ground_truth)
     pred = normalize_answer(prediction)
-    gold = normalize_answer(target)
-    if not pred or not gold:
-        return False
+    if not gold:
+        return ""
     if gold in {"yes", "no"}:
-        return pope_label_from_answer(pred) == gold
-    return re.search(rf"(?:^| ){re.escape(gold)}(?: |$)", pred) is not None
+        return yes_no_label(prediction) == gold
+    return gold == pred or re.search(rf"(?:^| ){re.escape(gold)}(?: |$)", pred) is not None
 
 
-def compute_metrics(dataset, predictions):
-    if dataset == "gqa":
-        correct = sum(
-            normalize_gqa_answer(item["text"]) == normalize_gqa_answer(item["ground_truth"])
-            for item in predictions
+def safe_stem(text):
+    text = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(text)).strip("_")
+    return text[:120] or "demo_case"
+
+
+def find_file_by_name(filename, dataset="", allow_zip_extract=False):
+    dataset = str(dataset or "pope").lower()
+    if dataset != "pope":
+        raise ValueError(
+            f"This defense demo is POPE-only. Got dataset={dataset!r}; "
+            "use a POPE/COCO val2014 image instead."
         )
-        total = len(predictions)
-        return {
-            "accuracy": correct / total if total else 0.0,
-            "correct": correct,
-            "total": total,
-        }
 
-    if dataset == "failure_mining":
-        correct = sum(
-            exact_or_phrase_match(item["text"], item["ground_truth"])
-            for item in predictions
-        )
-        total = len(predictions)
-        return {
-            "accuracy": correct / total if total else 0.0,
-            "correct": correct,
-            "total": total,
-        }
+    filename = str(filename or "").strip()
+    if not filename:
+        raise ValueError("image_filename is empty")
 
-    y_true = [1 if normalize_answer(item["ground_truth"]) == "yes" else 0 for item in predictions]
-    y_pred = [1 if pope_label_from_answer(item["text"]) == "yes" else 0 for item in predictions]
-    tp = sum(pred == 1 and gold == 1 for pred, gold in zip(y_pred, y_true))
-    tn = sum(pred == 0 and gold == 0 for pred, gold in zip(y_pred, y_true))
-    fp = sum(pred == 1 and gold == 0 for pred, gold in zip(y_pred, y_true))
-    fn = sum(pred == 0 and gold == 1 for pred, gold in zip(y_pred, y_true))
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    return {
-        "accuracy": (tp + tn) / len(y_true) if y_true else 0.0,
-        "f1": f1,
-        "precision": precision,
-        "recall": recall,
-        "tp": tp,
-        "tn": tn,
-        "fp": fp,
-        "fn": fn,
-        "correct": tp + tn,
-        "total": len(y_true),
-    }
+    direct_candidates = [
+        Path(filename),
+        REPO_ROOT / filename,
+        Path("/kaggle/working") / filename,
+    ]
+    for path in direct_candidates:
+        if path.is_file():
+            return path.resolve()
 
+    likely_roots = [
+        REPO_ROOT / "data/kaggle_datasets/POPE/val2014",
+        Path("/kaggle/input"),
+        Path("/kaggle/working"),
+    ]
 
-# ----- GQA data -----
-
-def find_first_existing(root, names):
-    for name in names:
-        matches = sorted(path for path in root.rglob(name) if path.is_file())
+    for root in likely_roots:
+        if not root.exists():
+            continue
+        direct = root / filename
+        if direct.is_file():
+            return direct.resolve()
+        matches = sorted(path for path in root.rglob(filename) if path.is_file())
         if matches:
-            return matches[0]
-    return None
+            return matches[0].resolve()
 
-
-def download_file(url, destination):
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists() and destination.stat().st_size > 0:
-        print("Using existing download:", destination)
-        return destination
-    print("Downloading:", url)
-    with urllib.request.urlopen(url, timeout=60) as response, open(destination, "wb") as output:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
-                break
-            output.write(chunk)
-    return destination
-
-
-def extract_gqa_question_file_from_zip(zip_path):
-    target_root = Path("/kaggle/working/gqa_questions")
-    target_root.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(zip_path) as archive:
-        names = archive.namelist()
-        for desired in GQA_QUESTION_FILE_PREFERENCE:
-            matches = [name for name in names if name.endswith(desired)]
+    if allow_zip_extract:
+        zip_matches = sorted(Path("/kaggle/input").rglob("*.zip"))
+        extract_root = Path("/kaggle/working/demo_zip_extract")
+        for zip_path in zip_matches:
+            target_dir = extract_root / zip_path.stem
+            marker = target_dir / ".extract_complete"
+            if not marker.exists():
+                print("Extracting zip because DEMO_ALLOW_ZIP_EXTRACT=True:", zip_path)
+                target_dir.mkdir(parents=True, exist_ok=True)
+                with zipfile.ZipFile(zip_path) as archive:
+                    archive.extractall(target_dir)
+                marker.write_text(str(zip_path), encoding="utf-8")
+            matches = sorted(path for path in target_dir.rglob(filename) if path.is_file())
             if matches:
-                member = sorted(matches)[0]
-                target_path = target_root / desired
-                if not target_path.exists():
-                    print("Extracting GQA question file:", member)
-                    with archive.open(member) as src, open(target_path, "wb") as dst:
-                        while True:
-                            chunk = src.read(1024 * 1024)
-                            if not chunk:
-                                break
-                            dst.write(chunk)
-                return target_path
-    raise FileNotFoundError(f"No validation question file found inside {zip_path}")
+                return matches[0].resolve()
 
-
-def find_gqa_question_file(gqa_root):
-    question_path = find_first_existing(gqa_root, GQA_QUESTION_FILE_PREFERENCE)
-    if question_path:
-        return question_path
-
-    input_root = Path("/kaggle/input")
-    zip_matches = sorted(input_root.rglob("questions1.2.zip")) + sorted(gqa_root.rglob("questions1.2.zip"))
-    if zip_matches:
-        return extract_gqa_question_file_from_zip(zip_matches[0])
-
-    download_dir = Path("/kaggle/working/gqa_downloads")
-    last_error = None
-    for url in GQA_QUESTIONS_URLS:
-        try:
-            zip_path = download_file(url, download_dir / "questions1.2.zip")
-            return extract_gqa_question_file_from_zip(zip_path)
-        except Exception as exc:
-            last_error = exc
-            print("Question download attempt failed:", repr(exc))
     raise FileNotFoundError(
-        "Could not find or download GQA validation questions. "
-        "Upload val_balanced_questions.json or questions1.2.zip to the Kaggle Dataset."
-    ) from last_error
+        f"Could not find image file {filename!r}. Upload the image as a Kaggle Dataset, "
+        "use an absolute path in CUSTOM_DEMO['image_path'], or set DEMO_ALLOW_ZIP_EXTRACT=True."
+    )
 
 
-def iter_gqa_questions(question_path):
-    with open(question_path, "rb") as f:
-        for question_id, question in ijson.kvitems(f, ""):
-            yield str(question_id), question
-
-
-def build_gqa_samples():
-    gqa_root = find_kaggle_input_dir("GQA")
-    gqa_image_dir = gqa_root / "images"
-    gqa_question_path = find_gqa_question_file(gqa_root)
-    print("GQA root:", gqa_root)
-    print("GQA image dir:", gqa_image_dir)
-    print("GQA question file:", gqa_question_path)
-
-    samples = []
-    skipped_missing_image = 0
-    skipped_unbalanced = 0
-    for question_id, question in iter_gqa_questions(gqa_question_path):
-        if not question.get("isBalanced", True):
-            skipped_unbalanced += 1
-            continue
-        question_text = question.get("question", "")
-        answer = question.get("answer", "")
-        image_id = str(question.get("imageId", ""))
-        image_path = gqa_image_dir / f"{image_id}.jpg"
-        if not question_text or not answer or not image_id:
-            continue
-        if not image_path.exists():
-            skipped_missing_image += 1
-            continue
-        types = question.get("types", {}) or {}
-        samples.append({
-            "question_id": question_id,
-            "question": question_text,
-            "prompt": question_text + GQA_SHORT_ANSWER_SUFFIX,
-            "ground_truth": str(answer),
-            "image_id": image_id,
-            "image_path": str(image_path),
-            "is_balanced": bool(question.get("isBalanced", True)),
-            "structural_type": types.get("structural", ""),
-            "semantic_type": types.get("semantic", ""),
-            "detailed_type": types.get("detailed", ""),
-        })
-
-    if len(samples) < GQA_STAGE8_SUBSET_N:
-        raise RuntimeError(
-            f"Only found {len(samples)} valid GQA samples, expected {GQA_STAGE8_SUBSET_N}. "
-            f"Skipped missing images: {skipped_missing_image}; skipped unbalanced: {skipped_unbalanced}."
+def validate_pope_image(case):
+    image_name = Path(case["image_path"]).name
+    if not (image_name.startswith("COCO_val2014_") and image_name.lower().endswith((".jpg", ".jpeg", ".png"))):
+        raise ValueError(
+            "This defense demo is POPE-only. Expected a COCO val2014 image named "
+            f"COCO_val2014_*.jpg, got {image_name!r}."
         )
-    rng = random.Random(STAGE8_SUBSET_SEED)
-    selected = rng.sample(sorted(samples, key=lambda item: item["question_id"]), GQA_STAGE8_SUBSET_N)
-    selected.sort(key=lambda item: item["question_id"])
-    write_jsonl(SUBSET_PATH, selected)
-    return selected, {
-        "eligible_seen": len(samples),
-        "skipped_missing_image": skipped_missing_image,
-        "skipped_unbalanced": skipped_unbalanced,
-        "subset_seed": STAGE8_SUBSET_SEED,
-        "subset_size": GQA_STAGE8_SUBSET_N,
-        "subset_file": str(SUBSET_PATH),
-    }
 
 
-# ----- POPE data -----
-
-def build_pope_samples():
-    pope_root = find_kaggle_input_dir("POPE")
-    pope_annotations_dir = pope_root / "annotations"
-    pope_image_dir = pope_root / "val2014"
-    print("POPE root:", pope_root)
-    print("POPE annotations:", pope_annotations_dir)
-    print("POPE image dir:", pope_image_dir)
-
-    samples = []
-    for category in ["adversarial", "popular", "random"]:
-        path = pope_annotations_dir / f"coco_pope_{category}.json"
-        rows = read_jsonl(path)
-        for row in rows:
-            image_path = pope_image_dir / row["image"]
-            if not image_path.exists():
-                raise FileNotFoundError(f"Missing POPE image: {image_path}")
-            samples.append({
-                "question_id": f"{category}_{row['question_id']}",
-                "pope_question_id": row["question_id"],
-                "pope_category": category,
-                "question": row["text"],
-                "prompt": row["text"],
-                "image": row["image"],
-                "image_path": str(image_path),
-                "ground_truth": row["label"],
-            })
-
-    if len(samples) < POPE_STAGE8_SUBSET_N:
-        raise RuntimeError(f"Only found {len(samples)} valid POPE samples, expected {POPE_STAGE8_SUBSET_N}.")
-    rng = random.Random(STAGE8_SUBSET_SEED)
-    selected = rng.sample(sorted(samples, key=lambda item: item["question_id"]), POPE_STAGE8_SUBSET_N)
-    selected.sort(key=lambda item: item["question_id"])
-    write_jsonl(SUBSET_PATH, selected)
-    return selected, {
-        "eligible_seen": len(samples),
-        "subset_seed": STAGE8_SUBSET_SEED,
-        "subset_size": POPE_STAGE8_SUBSET_N,
-        "subset_file": str(SUBSET_PATH),
-        "category_counts": {
-            category: sum(1 for item in selected if item["pope_category"] == category)
-            for category in ["adversarial", "popular", "random"]
-        },
-    }
-
-
-# ----- Failure-mining data, optional targeted stress test -----
-
-def build_failure_mining_samples():
-    if not FAILURE_MINING_CSV.exists():
-        raise FileNotFoundError(f"Missing failure-mining CSV: {FAILURE_MINING_CSV}")
-
-    with open(FAILURE_MINING_CSV, "r", encoding="utf-8", newline="") as f:
-        source_rows = list(csv.DictReader(f))
-
-    required_columns = {
-        "case_id",
-        "dataset",
-        "image_path",
-        "question",
-        "ground_truth",
-        "question_type",
-        "note",
-    }
-    actual_columns = set(source_rows[0].keys()) if source_rows else set()
-    missing_columns = sorted(required_columns - actual_columns)
-    if missing_columns:
-        raise RuntimeError(f"Failure-mining CSV is missing columns: {missing_columns}")
-    if len(source_rows) != 100:
-        raise RuntimeError(f"Expected 100 failure-mining rows, found {len(source_rows)}")
-
-    seen_ids = set()
-    samples = []
-    for row_number, row in enumerate(source_rows, start=2):
-        case_id = row["case_id"].strip()
-        if not case_id:
-            raise RuntimeError(f"Missing case_id on CSV row {row_number}")
-        if case_id in seen_ids:
-            raise RuntimeError(f"Duplicate case_id: {case_id}")
-        seen_ids.add(case_id)
-
-        question = row["question"].strip()
-        ground_truth = row["ground_truth"].strip()
-        if not question or not ground_truth:
-            raise RuntimeError(f"{case_id}: question or ground_truth is empty")
-
-        relative_image_path = Path(row["image_path"])
-        image_path = (FAILURE_MINING_IMAGE_ROOT / relative_image_path).resolve()
-        if not image_path.exists():
-            raise FileNotFoundError(f"{case_id}: missing image {image_path}")
-
-        samples.append({
-            "case_id": case_id,
-            "question_id": case_id,
-            "dataset_source": row["dataset"].strip(),
-            "image_path": str(image_path),
-            "source_image_path": relative_image_path.as_posix(),
-            "question": question,
-            "prompt": question + FAILURE_MINING_SHORT_ANSWER_SUFFIX,
-            "ground_truth": ground_truth,
-            "question_type": row["question_type"].strip(),
-            "note": row.get("note", "").strip(),
-        })
-
-    write_jsonl(SUBSET_PATH, samples)
-    return samples, {
-        "eligible_seen": len(samples),
-        "subset_seed": STAGE8_SUBSET_SEED,
-        "subset_size": len(samples),
-        "subset_file": str(SUBSET_PATH),
-        "source_csv": str(FAILURE_MINING_CSV),
-        "dataset_counts": dict(Counter(row["dataset_source"] for row in samples)),
-        "question_type_counts": dict(Counter(row["question_type"] for row in samples)),
-    }
-
-
-def build_stage8_samples():
-    if CURRENT_RUN.dataset == "gqa":
-        samples, stats = build_gqa_samples()
-    elif CURRENT_RUN.dataset == "pope":
-        samples, stats = build_pope_samples()
-    elif CURRENT_RUN.dataset == "failure_mining":
-        samples, stats = build_failure_mining_samples()
+def build_demo_case():
+    if DEMO_PRESET_NAME == "custom":
+        case = dict(CUSTOM_DEMO)
     else:
-        raise ValueError(f"Unsupported Stage 8 subset dataset: {CURRENT_RUN.dataset}")
+        if DEMO_PRESET_NAME not in DEMO_PRESETS:
+            raise ValueError(f"Unknown DEMO_PRESET_NAME={DEMO_PRESET_NAME!r}")
+        case = dict(DEMO_PRESETS[DEMO_PRESET_NAME])
 
-    expected_size = expected_sample_count(CURRENT_RUN.dataset)
-    if len(samples) != expected_size:
-        raise RuntimeError(f"{CURRENT_RUN.dataset} subset has {len(samples)} samples; expected {expected_size}")
-    return samples, stats
+    case["dataset"] = str(case.get("dataset", "pope")).lower()
+    if case["dataset"] != "pope":
+        raise ValueError(
+            f"This defense demo is POPE-only. Got dataset={case['dataset']!r}; "
+            "change the preset/custom image to a POPE case."
+        )
 
+    image_path = str(case.get("image_path", "")).strip()
+    if image_path:
+        path = Path(image_path)
+        if not path.is_absolute():
+            path = REPO_ROOT / path
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        case["image_path"] = str(path.resolve())
+    else:
+        case["image_path"] = str(
+            find_file_by_name(
+                case.get("image_filename", ""),
+                dataset=case.get("dataset", ""),
+                allow_zip_extract=DEMO_ALLOW_ZIP_EXTRACT,
+            )
+        )
 
-STAGE8_SAMPLES, STAGE8_SAMPLE_STATS = build_stage8_samples()
+    validate_pope_image(case)
+    case.setdefault("case_id", DEMO_PRESET_NAME)
+    case.setdefault("dataset", "custom")
+    case.setdefault("ground_truth", "")
+    case["question"] = str(case["question"]).strip()
+    case["ground_truth"] = str(case.get("ground_truth", "")).strip()
+    case["prompt_for_model"] = (
+        case["question"] + DEMO_SHORT_ANSWER_SUFFIX
+        if DEMO_USE_SHORT_ANSWER_SUFFIX
+        else case["question"]
+    )
+    return case
 
-print("Current run:", CURRENT_RUN.run_id)
-print("Dataset:", CURRENT_RUN.dataset)
-print("Subset count:", len(STAGE8_SAMPLES))
-print("Subset stats:", STAGE8_SAMPLE_STATS)
-print("Subset path:", SUBSET_PATH)
-print("Output root:", OUTPUT_ROOT)
-print("Download zip:", DOWNLOAD_ZIP)
-
-
-# ----- Inference -----
 
 def build_prompt(question):
     conv = conv_templates[CONV_MODE].copy()
@@ -758,9 +346,10 @@ def prepare_image_tensor(image):
     return images_tensor.to(model.device, dtype=torch.float16)
 
 
-def run_generation(row, run):
-    image = Image.open(row["image_path"]).convert("RGB")
-    prompt = build_prompt(row["prompt"])
+def run_demo_method(case, method_key):
+    spec = METHOD_SPECS[method_key]
+    image = Image.open(case["image_path"]).convert("RGB")
+    prompt = build_prompt(case["prompt_for_model"])
     input_ids = tokenizer_image_token(
         prompt,
         tokenizer,
@@ -771,31 +360,31 @@ def run_generation(row, run):
 
     sparse_core = model.get_model()
     original_pruning_loc = list(getattr(sparse_core, "pruning_loc", SPARSE_PRUNING_LOC))
-
     sparse_core.pruning_loc = SPARSE_PRUNING_LOC
     sparse_core.last_sparse_metadata = {}
 
-    try:
-        generation_kwargs = {
-            "do_sample": TEMPERATURE > 0,
-            "num_beams": NUM_BEAMS,
-            "max_new_tokens": MAX_NEW_TOKENS,
-            "use_cache": True,
-        }
-        if TEMPERATURE > 0:
-            generation_kwargs["temperature"] = TEMPERATURE
+    generation_kwargs = {
+        "do_sample": DEMO_TEMPERATURE > 0,
+        "num_beams": DEMO_NUM_BEAMS,
+        "max_new_tokens": DEMO_MAX_NEW_TOKENS,
+        "use_cache": True,
+    }
+    if DEMO_TEMPERATURE > 0:
+        generation_kwargs["temperature"] = DEMO_TEMPERATURE
 
+    start = time.time()
+    try:
         with torch.inference_mode():
             output_ids = model.generate(
                 inputs=input_ids,
                 images=images_tensor,
                 image_sizes=[image.size],
-                retained_tokens=run.retained_tokens,
-                selection_method=run.selection_method,
-                threshold_tau=run.threshold_tau,
-                candidate_pool_factor=run.candidate_pool_factor,
-                lambda_relevance=run.lambda_relevance,
-                record_selection_similarity=run.record_selection_similarity,
+                retained_tokens=spec["retained_tokens"],
+                selection_method=spec["selection_method"],
+                threshold_tau=spec["threshold_tau"],
+                candidate_pool_factor=spec["candidate_pool_factor"],
+                lambda_relevance=spec["lambda_relevance"],
+                record_selection_similarity=True,
                 **generation_kwargs,
             )
         answer = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
@@ -803,327 +392,392 @@ def run_generation(row, run):
     finally:
         sparse_core.pruning_loc = original_pruning_loc
 
-    metadata.setdefault("selection_method", run.selection_method)
-    metadata.setdefault("retained_tokens", run.retained_tokens)
-    metadata.setdefault("threshold_tau", run.threshold_tau)
-    metadata.setdefault("candidate_pool_factor", run.candidate_pool_factor)
-    metadata.setdefault("lambda_relevance", run.lambda_relevance)
-    metadata.setdefault("record_selection_similarity", run.record_selection_similarity)
+    elapsed = time.time() - start
+    metadata.setdefault("selection_method", spec["selection_method"])
+    metadata.setdefault("retained_tokens", spec["retained_tokens"])
+    metadata.setdefault("threshold_tau", spec["threshold_tau"])
+    metadata.setdefault("candidate_pool_factor", spec["candidate_pool_factor"])
+    metadata.setdefault("lambda_relevance", spec["lambda_relevance"])
 
-    return answer, metadata
-
-
-# ----- Validation and output -----
-
-def validate_metadata(run, metadata, sample_id):
-    problems = []
-    if metadata.get("selection_method") != run.selection_method:
-        problems.append(f"selection_method={metadata.get('selection_method')} expected {run.selection_method}")
-
-    if int(metadata.get("retained_tokens", -1)) != int(run.retained_tokens):
-        problems.append(f"retained_tokens={metadata.get('retained_tokens')} expected {run.retained_tokens}")
-
-    if int(metadata.get("candidate_pool_factor", -1)) != int(run.candidate_pool_factor):
-        problems.append(f"candidate_pool_factor={metadata.get('candidate_pool_factor')} expected {run.candidate_pool_factor}")
-
-    if run.selection_method == "mmr":
-        actual_lambda = float(metadata.get("lambda_relevance", -1))
-        if abs(actual_lambda - run.lambda_relevance) > 1e-9:
-            problems.append(f"lambda_relevance={actual_lambda} expected {run.lambda_relevance}")
-
-    layer_stats = metadata.get("layer_token_stats")
-    if not isinstance(layer_stats, list) or not layer_stats:
-        problems.append("missing layer_token_stats")
-        return [f"{sample_id}: {problem}" for problem in problems]
-
-    if metadata.get("retained_token_count") is None:
-        problems.append("missing retained_token_count")
-
-    selected_original = metadata.get("selected_original_token_indices")
-    if not isinstance(selected_original, list):
-        problems.append("missing selected_original_token_indices")
-    else:
-        bad_indices = [idx for idx in selected_original if not isinstance(idx, int) or idx < 0 or idx > 575]
-        if bad_indices:
-            problems.append(f"selected_original_token_indices outside 0-575: {bad_indices[:5]}")
-
-    for layer in layer_stats:
-        if layer.get("selection_method") != run.selection_method:
-            problems.append(f"layer {layer.get('layer_idx')} used {layer.get('selection_method')}")
-        selected_count = int(layer.get("selected_count", -1))
-        per_layer_budget = int(layer.get("per_layer_budget", -1))
-        if selected_count < 0 or per_layer_budget < 0:
-            problems.append(f"layer {layer.get('layer_idx')} has invalid selected_count or budget")
-        if run.selection_method == "threshold_fixed" and selected_count != per_layer_budget:
-            problems.append(f"threshold_fixed layer {layer.get('layer_idx')} selected {selected_count}, budget {per_layer_budget}")
-        if run.record_selection_similarity and layer.get("pairwise_similarity_available") is not True:
-            problems.append(f"layer {layer.get('layer_idx')} missing pairwise similarity stats")
-
-    return [f"{sample_id}: {problem}" for problem in problems]
-
-
-def prediction_record(row, run, answer, metadata, elapsed):
-    base = {
-        "question_id": row["question_id"],
-        "prompt": row["prompt"],
-        "text": answer,
-        "answer_id": shortuuid.uuid(),
-        "model_id": MODEL_PATH,
-        "dataset": run.dataset,
-        "image_path": row["image_path"],
-        "ground_truth": row["ground_truth"],
-        "run_id": run.run_id,
-        "subset_seed": STAGE8_SUBSET_SEED,
-        "subset_size": len(STAGE8_SAMPLES),
-        "metadata": metadata,
-        "inference_seconds": elapsed,
-    }
-    if run.dataset == "gqa":
-        base.update({
-            "raw_question": row["question"],
-            "image_id": row["image_id"],
-            "normalized_text": normalize_gqa_answer(answer),
-            "normalized_ground_truth": normalize_gqa_answer(row["ground_truth"]),
-            "is_correct": normalize_gqa_answer(answer) == normalize_gqa_answer(row["ground_truth"]),
-            "structural_type": row.get("structural_type", ""),
-            "semantic_type": row.get("semantic_type", ""),
-            "detailed_type": row.get("detailed_type", ""),
-        })
-    elif run.dataset == "pope":
-        base.update({
-            "pope_question_id": row["pope_question_id"],
-            "pope_category": row["pope_category"],
-            "image": row["image"],
-        })
-    elif run.dataset == "failure_mining":
-        base.update({
-            "case_id": row["case_id"],
-            "source_dataset": row["dataset_source"],
-            "source_image_path": row["source_image_path"],
-            "question_type": row["question_type"],
-            "note": row.get("note", ""),
-            "is_correct": exact_or_phrase_match(answer, row["ground_truth"]),
-        })
-    return base
-
-
-def sparse_stats_for_predictions(run, predictions):
-    counts = [
-        int(item["metadata"]["retained_token_count"])
-        for item in predictions
-        if item.get("metadata", {}).get("retained_token_count") is not None
-    ]
-    if not counts:
-        return {}
+    torch.cuda.empty_cache()
     return {
-        "average_retained_tokens": sum(counts) / len(counts),
-        "min_retained_tokens": min(counts),
-        "max_retained_tokens": max(counts),
+        "method_key": method_key,
+        "method_label": spec["label"],
+        "answer": answer,
+        "is_rough_correct": rough_correct(answer, case.get("ground_truth", "")),
+        "seconds": elapsed,
+        "metadata": metadata,
     }
 
 
-def metric_rows_for_run(run, predictions):
-    metrics = compute_metrics(run.dataset, predictions)
-    row = {
-        "run_id": run.run_id,
-        "dataset": run.dataset.upper(),
-        "ablation_role": run.ablation_role,
-        "method": run.method_label,
-        "selection_method": run.selection_method,
-        "token_setting": run.retained_tokens,
-        "threshold_tau": run.threshold_tau if run.selection_method.startswith("threshold") else "",
-        "candidate_pool_factor": run.candidate_pool_factor,
-        "lambda_relevance": run.lambda_relevance,
-        "record_selection_similarity": run.record_selection_similarity,
-        "sample_count": len(predictions),
-        "subset_seed": STAGE8_SUBSET_SEED,
-        "subset_size": len(STAGE8_SAMPLES),
-        "accuracy": metrics.get("accuracy", ""),
-        "correct": metrics.get("correct", ""),
-        "total": metrics.get("total", ""),
-    }
-    if run.dataset == "pope":
-        row.update({
-            "f1": metrics.get("f1", ""),
-            "precision": metrics.get("precision", ""),
-            "recall": metrics.get("recall", ""),
-            "tp": metrics.get("tp", ""),
-            "tn": metrics.get("tn", ""),
-            "fp": metrics.get("fp", ""),
-            "fn": metrics.get("fn", ""),
-        })
-    row.update(sparse_stats_for_predictions(run, predictions))
-    return [row]
+def run_defense_demo():
+    case = build_demo_case()
+    output_dir = DEMO_OUTPUT_ROOT / safe_stem(case.get("case_id", DEMO_PRESET_NAME))
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-
-def write_run_metric_csv(run, predictions):
-    output_path = RESULTS_ROOT / run.metric_relpath
-    rows = metric_rows_for_run(run, predictions)
-    fieldnames = sorted({key for row in rows for key in row.keys()})
-    write_csv(output_path, rows, fieldnames)
-    return output_path, rows
-
-
-def write_stage8_summary(manifest):
-    summary_rows = []
-    for item in manifest:
-        metric = item["metrics"][0] if item.get("metrics") else {}
-        summary_rows.append({
-            "run_id": item["run_id"],
-            "dataset": item["dataset"],
-            "ablation_role": item["ablation_role"],
-            "method": item["method"],
-            "selection_method": item["selection_method"],
-            "token_setting": item["retained_tokens"],
-            "threshold_tau": item["threshold_tau"] if item["selection_method"].startswith("threshold") else "",
-            "candidate_pool_factor": item["candidate_pool_factor"],
-            "lambda_relevance": item["lambda_relevance"],
-            "record_selection_similarity": item["record_selection_similarity"],
-            "sample_count": item["sample_count"],
-            "subset_seed": item["subset_seed"],
-            "subset_size": item["subset_size"],
-            "accuracy": metric.get("accuracy", ""),
-            "f1": metric.get("f1", ""),
-            "correct": metric.get("correct", ""),
-            "total": metric.get("total", ""),
-            "average_retained_tokens": metric.get("average_retained_tokens", ""),
-            "min_retained_tokens": metric.get("min_retained_tokens", ""),
-            "max_retained_tokens": metric.get("max_retained_tokens", ""),
-            "prediction_file": item["prediction_file"],
-            "metric_file": item["metric_file"],
-            "subset_file": item["subset_file"],
-            "log_file": item["log_file"],
-            "status": item["status"],
-        })
-
-    fieldnames = [
-        "run_id", "dataset", "ablation_role", "method", "selection_method",
-        "token_setting", "threshold_tau", "candidate_pool_factor",
-        "lambda_relevance", "record_selection_similarity", "sample_count",
-        "subset_seed", "subset_size", "accuracy", "f1", "correct", "total",
-        "average_retained_tokens", "min_retained_tokens", "max_retained_tokens",
-        "prediction_file", "metric_file", "subset_file", "log_file", "status",
-    ]
-    write_csv(SUMMARY_DIR / "stage8_subset_summary.csv", summary_rows, fieldnames)
-    return summary_rows
-
-
-def run_one_stage8_experiment(run):
-    predictions = []
-    metadata_errors = []
-    log_path = LOG_DIR / f"{run.run_id}.jsonl"
-    prediction_path = RESULTS_ROOT / run.prediction_relpath
-
-    with open(log_path, "w", encoding="utf-8") as log_file:
-        log_file.write(json.dumps({
-            "event": "run_start",
-            "run_id": run.run_id,
-            "dataset": run.dataset,
-            "ablation_role": run.ablation_role,
-            "selection_method": run.selection_method,
-            "retained_tokens": run.retained_tokens,
-            "threshold_tau": run.threshold_tau,
-            "candidate_pool_factor": run.candidate_pool_factor,
-            "lambda_relevance": run.lambda_relevance,
-            "record_selection_similarity": run.record_selection_similarity,
-            "sample_count": len(STAGE8_SAMPLES),
-            "subset_seed": STAGE8_SUBSET_SEED,
-            "subset_path": str(SUBSET_PATH),
-            "time": time.time(),
-        }) + "\n")
-
-        for sample_idx, row in enumerate(STAGE8_SAMPLES, start=1):
-            start = time.time()
-            answer, metadata = run_generation(row, run)
-            elapsed = time.time() - start
-            record = prediction_record(row, run, answer, metadata, elapsed)
-            predictions.append(record)
-            metadata_errors.extend(validate_metadata(run, metadata, row["question_id"]))
-
-            if sample_idx % CHECKPOINT_EVERY == 0 or sample_idx == len(STAGE8_SAMPLES):
-                print(f"  {run.run_id}: {sample_idx}/{len(STAGE8_SAMPLES)} samples")
-                write_jsonl(prediction_path, predictions)
-
-            log_file.write(json.dumps({
-                "event": "sample_done",
-                "run_id": run.run_id,
-                "sample_index": sample_idx,
-                "question_id": row["question_id"],
-                "seconds": elapsed,
-                "retained_token_count": metadata.get("retained_token_count"),
-            }) + "\n")
-            log_file.flush()
-            torch.cuda.empty_cache()
-
-        log_file.write(json.dumps({
-            "event": "run_end",
-            "run_id": run.run_id,
-            "sample_count": len(predictions),
-            "metadata_error_count": len(metadata_errors),
-            "time": time.time(),
-        }) + "\n")
-
-    if metadata_errors:
-        raise RuntimeError(
-            f"{run.run_id} metadata validation failed:\n"
-            + "\n".join(metadata_errors[:30])
-        )
-
-    write_jsonl(prediction_path, predictions)
-    metric_path, metric_rows = write_run_metric_csv(run, predictions)
-
-    manifest_record = {
-        "run_id": run.run_id,
-        "dataset": run.dataset,
-        "ablation_role": run.ablation_role,
-        "method": run.method_label,
-        "selection_method": run.selection_method,
-        "retained_tokens": run.retained_tokens,
-        "threshold_tau": run.threshold_tau,
-        "candidate_pool_factor": run.candidate_pool_factor,
-        "lambda_relevance": run.lambda_relevance,
-        "record_selection_similarity": run.record_selection_similarity,
-        "sample_count": len(predictions),
-        "subset_seed": STAGE8_SUBSET_SEED,
-        "subset_size": len(STAGE8_SAMPLES),
-        "subset_file": str(SUBSET_PATH),
-        "prediction_file": str(prediction_path),
-        "metric_file": str(metric_path),
-        "log_file": str(log_path),
-        "metrics": metric_rows,
-        "status": "ok",
-    }
-    return manifest_record
-
-
-def run_stage8_subset_experiment():
-    start = time.time()
-    print(
-        f"Running {CURRENT_RUN.run_id} "
-        f"({CURRENT_RUN.dataset}, {CURRENT_RUN.selection_method}, "
-        f"retained={CURRENT_RUN.retained_tokens}, pool={CURRENT_RUN.candidate_pool_factor}, "
-        f"lambda={CURRENT_RUN.lambda_relevance})"
-    )
-    record = run_one_stage8_experiment(CURRENT_RUN)
-    manifest = [record]
-    with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2)
-    summary_rows = write_stage8_summary(manifest)
-
+    print("Demo case:", case.get("case_id"))
+    print("Dataset:", case.get("dataset"))
+    print("Image:", case["image_path"])
+    print("Question:", case["question"])
+    print("Ground truth:", case.get("ground_truth", ""))
+    if case.get("defense_use"):
+        print("Defense use:", case["defense_use"])
     print()
-    print("Stage 8 subset experiment complete.")
-    print("Run:", CURRENT_RUN.run_id)
-    print("Dataset:", CURRENT_RUN.dataset)
-    print("Samples:", len(STAGE8_SAMPLES))
-    print("Subset seed:", STAGE8_SUBSET_SEED)
-    print("Output root:", OUTPUT_ROOT)
-    print("Manifest:", MANIFEST_PATH)
-    print("Summary rows:", len(summary_rows))
-    print("Total minutes:", round((time.time() - start) / 60, 2))
-    return manifest
+
+    results = []
+    for method_key in DEMO_METHODS:
+        print("Running", METHOD_SPECS[method_key]["label"])
+        result = run_demo_method(case, method_key)
+        results.append(result)
+        print(f"  Answer: {result['answer']}")
+        print(f"  Time: {result['seconds']:.2f}s")
+
+    payload = {
+        "case": case,
+        "methods": DEMO_METHODS,
+        "results": results,
+        "reference_answers": case.get("reference_answers", {}),
+    }
+    json_path = output_dir / "demo_results.json"
+    with json_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, ensure_ascii=False)
+
+    rows = [
+        "| Method | Live answer | Rough correct | Seconds | Reference answer |",
+        "| --- | --- | ---: | ---: | --- |",
+    ]
+    reference = case.get("reference_answers", {})
+    for result in results:
+        ref = reference.get(result["method_key"], "")
+        correctness = result["is_rough_correct"]
+        correctness_text = "" if correctness == "" else str(bool(correctness))
+        rows.append(
+            "| {method} | {answer} | {correct} | {seconds:.2f} | {ref} |".format(
+                method=result["method_label"],
+                answer=str(result["answer"]).replace("|", "\\|"),
+                correct=correctness_text,
+                seconds=result["seconds"],
+                ref=str(ref).replace("|", "\\|"),
+            )
+        )
+    display(Markdown("\n".join(rows)))
+    print("Saved:", json_path)
+    return case, results, output_dir
+
+
+try:
+    BICUBIC = Image.Resampling.BICUBIC
+    LANCZOS = Image.Resampling.LANCZOS
+except AttributeError:
+    BICUBIC = Image.BICUBIC
+    LANCZOS = Image.LANCZOS
+
+
+def default_font(size=14, bold=False):
+    candidates = [
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            return ImageFont.truetype(str(path), size=size)
+    return ImageFont.load_default()
+
+
+def expand2square(pil_img, background_color):
+    width, height = pil_img.size
+    if width == height:
+        return pil_img.copy()
+    if width > height:
+        result = Image.new(pil_img.mode, (width, width), background_color)
+        result.paste(pil_img, (0, (width - height) // 2))
+        return result
+    result = Image.new(pil_img.mode, (height, height), background_color)
+    result.paste(pil_img, ((height - width) // 2, 0))
+    return result
+
+
+def tensor_to_pil(pixel_values):
+    tensor = pixel_values.detach().float().cpu()
+    mean = torch.tensor(image_processor.image_mean).view(3, 1, 1)
+    std = torch.tensor(image_processor.image_std).view(3, 1, 1)
+    tensor = tensor * std + mean
+    array = (tensor.clamp(0, 1).permute(1, 2, 0).numpy() * 255).astype(np.uint8)
+    return Image.fromarray(array)
+
+
+def clip_input_view(raw_image):
+    ratio = getattr(model.config, "image_aspect_ratio", None)
+    image = raw_image.convert("RGB")
+    if ratio == "anyres":
+        raise RuntimeError("This demo visualizer expects the single 24x24 CLIP grid, not anyres.")
+    if ratio == "pad":
+        image = expand2square(image, tuple(int(x * 255) for x in image_processor.image_mean))
+    pixel = image_processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+    return tensor_to_pil(pixel)
+
+
+def patch_box(index, width, height):
+    row, col = divmod(int(index), GRID_SIZE)
+    left = round(col * width / GRID_SIZE)
+    top = round(row * height / GRID_SIZE)
+    right = round((col + 1) * width / GRID_SIZE)
+    bottom = round((row + 1) * height / GRID_SIZE)
+    return left, top, right, bottom
+
+
+def draw_grid(image, fill=(80, 80, 80, 52)):
+    canvas = image.convert("RGBA")
+    draw = ImageDraw.Draw(canvas, "RGBA")
+    for row in range(GRID_SIZE + 1):
+        y = round(row * canvas.height / GRID_SIZE)
+        draw.line((0, y, canvas.width, y), fill=fill, width=1)
+    for col in range(GRID_SIZE + 1):
+        x = round(col * canvas.width / GRID_SIZE)
+        draw.line((x, 0, x, canvas.height), fill=fill, width=1)
+    return canvas.convert("RGB")
+
+
+def sparsevlm_style_pruned_view(base, selected_indices, color, fade=0.74):
+    base = base.convert("RGB")
+    faded = Image.blend(base, Image.new("RGB", base.size, "white"), max(0.0, min(float(fade), 1.0)))
+    draw = ImageDraw.Draw(faded)
+    for index in sorted(set(int(i) for i in selected_indices if 0 <= int(i) <= MAX_PATCH_INDEX)):
+        box = patch_box(index, base.width, base.height)
+        if box[2] <= box[0] or box[3] <= box[1]:
+            continue
+        faded.paste(base.crop(box), box)
+        draw.rectangle(box, outline=color, width=2)
+    return faded
+
+
+def layer_indices(metadata, layer_idx):
+    for layer in metadata.get("layer_token_stats", []) or []:
+        if int(layer.get("layer_idx", -1)) == int(layer_idx):
+            values = layer.get("selected_original_token_indices", [])
+            return [int(v) for v in values if isinstance(v, int) and 0 <= int(v) <= MAX_PATCH_INDEX]
+    return []
+
+
+def draw_wrapped(draw, xy, text, width_chars, font, fill=(20, 20, 20), line_gap=4):
+    x, y = xy
+    for paragraph in str(text or "").splitlines() or [""]:
+        for line in textwrap.wrap(paragraph, width=width_chars) or [""]:
+            draw.text((x, y), line, font=font, fill=fill)
+            bbox = draw.textbbox((x, y), line, font=font)
+            y += bbox[3] - bbox[1] + line_gap
+    return y
+
+
+def make_demo_visualization(case, results, output_dir):
+    raw = Image.open(case["image_path"]).convert("RGB")
+    clip_view = clip_input_view(raw)
+    panel_size = DEMO_PANEL_SIZE
+    clip_panel = clip_view.resize((panel_size, panel_size), LANCZOS)
+    original_panel = draw_grid(clip_panel)
+
+    margin = 18
+    text_width = 360
+    gap = 12
+    label_height = 30
+    header_height = 128
+    row_height = panel_size + label_height + 28
+    width = margin * 2 + text_width + gap + 4 * panel_size + 3 * gap
+    height = header_height + row_height * len(results) + margin
+
+    canvas = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(canvas)
+    title_font = default_font(18, bold=True)
+    bold_font = default_font(14, bold=True)
+    small_font = default_font(12)
+    body_font = default_font(13)
+
+    y = margin
+    draw.text((margin, y), "Single-image SparseVLM pruning demo", font=title_font, fill=(0, 0, 0))
+    y += 28
+    y = draw_wrapped(draw, (margin, y), f"Case: {case.get('case_id', '')} | Dataset: {case.get('dataset', '')}", 150, body_font)
+    y = draw_wrapped(draw, (margin, y), f"Question: {case['question']}", 150, body_font)
+    y = draw_wrapped(draw, (margin, y), f"Ground truth: {case.get('ground_truth', '')}", 150, bold_font, fill=(0, 105, 40))
+
+    x0 = margin + text_width + gap
+    for idx, label in enumerate(["CLIP input grid", "Layer 2", "Layer 6", "Layer 15 final"]):
+        x = x0 + idx * (panel_size + gap)
+        draw.text((x, header_height - 24), label, font=bold_font, fill=(0, 0, 0))
+
+    for row_idx, result in enumerate(results):
+        spec = METHOD_SPECS[result["method_key"]]
+        row_top = header_height + row_idx * row_height
+        text_x = margin
+        text_y = row_top + 5
+        draw.text((text_x, text_y), result["method_label"], font=bold_font, fill=spec["color"])
+        text_y += 22
+        text_y = draw_wrapped(draw, (text_x, text_y), f"Answer: {result['answer']}", 42, body_font)
+        text_y = draw_wrapped(draw, (text_x, text_y + 2), f"Time: {result['seconds']:.2f}s", 42, small_font, fill=(70, 70, 70))
+        if case.get("reference_answers", {}).get(result["method_key"]):
+            text_y = draw_wrapped(
+                draw,
+                (text_x, text_y + 2),
+                f"Reference: {case['reference_answers'][result['method_key']]}",
+                42,
+                small_font,
+                fill=(70, 70, 70),
+            )
+
+        panels = [original_panel]
+        for layer_idx in SPARSE_PRUNING_LOC:
+            indices = layer_indices(result["metadata"], layer_idx)
+            panels.append(sparsevlm_style_pruned_view(clip_panel, indices, spec["color"], fade=DEMO_FADE))
+        for panel_idx, panel in enumerate(panels):
+            x = x0 + panel_idx * (panel_size + gap)
+            y_panel = row_top + label_height
+            canvas.paste(panel, (x, y_panel))
+            if panel_idx > 0:
+                layer_idx = SPARSE_PRUNING_LOC[panel_idx - 1]
+                indices = layer_indices(result["metadata"], layer_idx)
+                count_text = f"raw={len(indices)}, unique={len(set(indices))}"
+                draw.text((x, y_panel + panel_size + 4), count_text, font=small_font, fill=(70, 70, 70))
+
+    note = (
+        "Faded patches are not explicitly retained original CLIP patches. "
+        "Merged/recycled tokens are not shown as individual patches."
+    )
+    draw_wrapped(draw, (margin, height - margin - 22), note, 160, small_font, fill=(85, 85, 85))
+
+    output_path = output_dir / "demo_sparsevlm_style_comparison.png"
+    canvas.save(output_path)
+    display(canvas)
+    print("Saved visualization:", output_path)
+    return output_path
+
+
+print("Torch:", torch.__version__)
+print("CUDA available:", torch.cuda.is_available())
+print("Repository root:", REPO_ROOT)
+print("Demo output root:", DEMO_OUTPUT_ROOT)
 ```
 
-Cell 5: Load model
+Demo Cell 4: Choose the one image to demo
+```python
+# Rerun this cell whenever you want to switch to another image.
+
+DEMO_PRESETS = {
+    "pope_ours_recovery_potted_plant": {
+        "case_id": "POPE_adversarial_21",
+        "dataset": "pope",
+        "image_filename": "COCO_val2014_000000211674.jpg",
+        "question": "Is there a potted plant in the image?",
+        "ground_truth": "yes",
+        "defense_use": "Ours-only POPE recovery: SparseVLM-Original and Threshold-Fixed answer no, Ours answers yes.",
+        "reference_answers": {
+            "dense": "Yes",
+            "sparse": "No",
+            "ours": "Yes",
+            "threshold": "No",
+        },
+    },
+    "pope_ours_recovery_toothbrush": {
+        "case_id": "POPE_adversarial_177",
+        "dataset": "pope",
+        "image_filename": "COCO_val2014_000000288639.jpg",
+        "question": "Is there a toothbrush in the image?",
+        "ground_truth": "yes",
+        "defense_use": "POPE recovery where both Ours and Threshold-Fixed recover the SparseVLM-Original failure.",
+        "reference_answers": {
+            "dense": "Yes",
+            "sparse": "No",
+            "ours": "Yes",
+            "threshold": "Yes",
+        },
+    },
+    "pope_both_correct_snowboard": {
+        "case_id": "POPE_adversarial_1",
+        "dataset": "pope",
+        "image_filename": "COCO_val2014_000000310196.jpg",
+        "question": "Is there a snowboard in the image?",
+        "ground_truth": "yes",
+        "defense_use": "Both SparseVLM-Original and Ours are correct; use this to show stability on POPE.",
+        "reference_answers": {
+            "dense": "Yes",
+            "sparse": "Yes",
+            "ours": "Yes",
+            "threshold": "Yes",
+        },
+    },
+    "pope_ours_regression_person_cats": {
+        "case_id": "POPE_adversarial_128",
+        "dataset": "pope",
+        "image_filename": "COCO_val2014_000000075591.jpg",
+        "question": "Is there a person in the image?",
+        "ground_truth": "no",
+        "defense_use": "POPE regression: SparseVLM-Original is correct, while Ours and Threshold-Fixed hallucinate a person.",
+        "reference_answers": {
+            "dense": "No",
+            "sparse": "No",
+            "ours": "Yes",
+            "threshold": "Yes",
+        },
+    },
+    "pope_both_wrong_book_on_bed": {
+        "case_id": "POPE_adversarial_131",
+        "dataset": "pope",
+        "image_filename": "COCO_val2014_000000075591.jpg",
+        "question": "Is there a book in the image?",
+        "ground_truth": "yes",
+        "defense_use": "Both SparseVLM-Original and Ours are wrong, while Dense and Threshold-Fixed answer correctly.",
+        "reference_answers": {
+            "dense": "Yes",
+            "sparse": "No",
+            "ours": "No",
+            "threshold": "Yes",
+        },
+    },
+}
+
+# Use one of the preset names above, or set this to "custom".
+# Every preset is POPE-only. Make sure the POPE/COCO val2014 images are mounted.
+DEMO_PRESET_NAME = "pope_ours_recovery_potted_plant"
+
+# For custom demos, set DEMO_PRESET_NAME = "custom" and edit these fields.
+CUSTOM_DEMO = {
+    "case_id": "custom_demo",
+    "dataset": "pope",
+    "image_filename": "COCO_val2014_000000211674.jpg",
+    "image_path": "",  # optional absolute path; overrides image_filename when set
+    "question": "Is there a potted plant in the image?",
+    "ground_truth": "yes",
+    "defense_use": "Custom POPE single-image demo.",
+    "reference_answers": {},
+}
+
+# Keep this False for live demos unless your image is inside a zip and you accept
+# the extraction time and disk usage.
+DEMO_ALLOW_ZIP_EXTRACT = False
+
+# Run only one image, but compare these methods on that image.
+DEMO_METHODS = ["sparse", "ours", "threshold"]
+
+# Generation and visualization settings.
+DEMO_USE_SHORT_ANSWER_SUFFIX = True
+DEMO_SHORT_ANSWER_SUFFIX = "\nAnswer using a single word or short phrase."
+DEMO_MAX_NEW_TOKENS = 32
+DEMO_TEMPERATURE = 0.0
+DEMO_NUM_BEAMS = 1
+DEMO_PANEL_SIZE = 224
+DEMO_FADE = 0.74
+
+demo_case_preview = build_demo_case()
+display(Markdown(
+    f"**Selected demo:** `{demo_case_preview['case_id']}`  \n"
+    f"**Dataset:** `{demo_case_preview.get('dataset', '')}`  \n"
+    f"**Image:** `{demo_case_preview['image_path']}`  \n"
+    f"**Question:** {demo_case_preview['question']}  \n"
+    f"**Ground truth:** `{demo_case_preview.get('ground_truth', '')}`  \n"
+    f"**Purpose:** {demo_case_preview.get('defense_use', '')}"
+))
+display(Image.open(demo_case_preview["image_path"]).convert("RGB"))
+```
+
+Demo Cell 5: Load the sparse model once
 ```python
 disable_torch_init()
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -1144,36 +798,30 @@ model.eval()
 print("Loaded:", MODEL_PATH)
 print("Conversation mode:", CONV_MODE)
 print("Context length:", context_len)
-print("Max new tokens:", MAX_NEW_TOKENS)
-print("Current run:", CURRENT_RUN.run_id)
-print("Dataset:", CURRENT_RUN.dataset)
-print("Subset count:", len(STAGE8_SAMPLES))
-print("Candidate pool factor:", CURRENT_RUN.candidate_pool_factor)
-print("Lambda relevance:", CURRENT_RUN.lambda_relevance)
-print("Record pairwise similarity:", CURRENT_RUN.record_selection_similarity)
+print("Methods available:", ", ".join(METHOD_SPECS))
 print("Load seconds:", round(time.time() - load_start, 2))
 ```
 
-Cell 6: Run selected Stage 8 subset experiment
+Demo Cell 6: Run the selected image through the demo methods
 ```python
-manifest = run_stage8_subset_experiment()
+demo_case, demo_results, demo_output_dir = run_defense_demo()
 ```
 
-Cell 7: Zip current run outputs for download
+Demo Cell 7: Render the SparseVLM-style patch demo
 ```python
-import shutil
-from pathlib import Path
+demo_figure_path = make_demo_visualization(demo_case, demo_results, demo_output_dir)
+```
 
-output_root = Path(OUTPUT_ROOT)
-download_zip = Path(DOWNLOAD_ZIP)
+Demo Cell 8: Zip current demo output for download
+```python
+download_zip = Path("/kaggle/working") / f"{safe_stem(demo_case.get('case_id', 'demo'))}_defense_demo.zip"
 if download_zip.exists():
     download_zip.unlink()
 
-archive_base = download_zip.with_suffix("")
 created_zip = shutil.make_archive(
-    base_name=str(archive_base),
+    base_name=str(download_zip.with_suffix("")),
     format="zip",
-    root_dir=str(output_root),
+    root_dir=str(demo_output_dir),
 )
 
 print("Created:", created_zip)
